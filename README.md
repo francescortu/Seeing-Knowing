@@ -1,1 +1,39 @@
-# When-Seeing-Overrides-Knowing
+# When Seeing Overrides Knowing: Disentangling Knowledge Conflict in Vision-Language Models
+
+## Installation
+
+### Prerequisites
+
+Ensure you have the following installed:
+
+- **Python**: Version `3.8+`
+- **Poetry**: For dependency and virtual environment management (version >`1.8`)
+- **Git**: For cloning repositories and handling submodules
+
+### Install
+```bash
+poetry install
+```
+
+
+## Run Experiments
+```bash
+    - <model_name>: either `llava-hf/llava-v1.6-mistral-7b-hf` or `google/gemma-3-12b-it`
+```
+
+### Identification of components and heads
+```bash
+poetry run python script/experiment/0_logit_lens/1_logitlens.py /
+                            --model <model_name>
+
+```
+
+### Intervention
+```bash 
+poetry run python script/experiment/1_heads_ablation/2_full.py --model <model_name> --not_rebalance_weight --ablation_type last-row-paired  
+```
+
+### Pixel Localization
+```bash
+poetry run python script/experiment/2_ImgCfactLocalization/1_full.py --experiments baseline multiple_resid_ablation_with_control  --model <model_name>
+```
