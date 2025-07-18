@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 from typing import List, Tuple, Dict, Optional, Any, Union
 from datasets import load_dataset, Dataset, DatasetDict
+from transformers import GenerationConfig
 from tqdm import tqdm
 import torch
 from easyroutine.interpretability import (
@@ -13,8 +14,28 @@ from easyroutine.interpretability import (
     ExtractionConfig,
 )
 from easyroutine.interpretability.tools import LogitLens
+from easyroutine.interpretability.utils import selective_log_softmax
 from src.datastatistics import statistics_computer
+from pycocoevalcap.eval import COCOEvalCap
+from pycocotools.coco import COCO
+from PIL import Image
 import json
+import urllib.request
+import io
+
+
+@dataclass
+class DebugConfig:
+    debug: bool = False
+    debug_samples: int = 10
+
+
+@dataclass
+class SelectHeadsConfig:
+    k_heads: int = 20
+    prec: float = 0.02
+    sampling_mode: str = "fixed_number"  # "fixed_number" or "percentile"
+    metric: str = "accuracy"  # "accuracy" or "loss"
 
 
 @dataclass
@@ -22,29 +43,30 @@ class BaseConfig:
     """Base configuration class for experiments"""
 
     model_name: str
-    dataset_name: str
-    # tag: str
     experiment_tag: str
+    debug: DebugConfig = field(
+        default_factory=lambda: DebugConfig(debug=False, debug_samples=10)
+    )
     extra_metadata: Dict[str, Any] = field(default_factory=dict)
-    debug: bool = False
-    debug_samples: int = 10
     prompt_templates: Dict[str, str] = field(
         default_factory=lambda: {
             "llava-hf/llava-v1.6-mistral-7b-hf": "[INST] <image>\n [/INST] {text}",
+            "llava-hf/llava-v1.6-mistral-7b-hf-instruction": "[INST] <image>\n {text} [/INST]",
             "google/gemma-3-12b-it": "<bos><start_of_turn>user\n<start_of_image><end_of_turn>\n<start_of_turn>model\n{text}",
+            "google/gemma-3-12b-it-instruction": "<bos><start_of_turn>user\n<start_of_image><end_of_turn>\n<start_of_turn>model\n{text}",
+            "facebook/chameleon-7b": "<image>\n {text}",
         }
     )
+    dataset_subset: str = "full"  # "full", "small1", or "small2"
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert the configuration to a dictionary"""
         return {
             "model_name": self.model_name,
-            "dataset_name": self.dataset_name,
             # "tag": self.tag,
             "experiment_tag": self.experiment_tag,
             "extra_metadata": self.extra_metadata,
             "debug": self.debug,
-            "debug_samples": self.debug_samples,
             "prompt_templates": self.prompt_templates,
         }
 
@@ -62,21 +84,18 @@ class ExperimentManager:
         self.model: HookedModel
         self.tokenizer = None
         self.text_tokenizer = None
+
         self.dataloader: Optional[List[Dict[str, Any]]] = None
         self.dataset: Optional[Union[Dataset, DatasetDict]] = None
+        self.token_pair = None
+
+        self.baseline = None
         self.cfact_heads: Optional[List[Tuple[int, int]]] = None
         self.fact_heads: Optional[List[Tuple[int, int]]] = None
 
         # Setup logging
         self.setup_logging()
 
-        # baseline
-        self.baseline = None
-        self.token_pair = None
-
-        # Output paths
-        self.dataloader_dir = Path("data/manual")
-        self.dataloader_dir.mkdir(parents=True, exist_ok=True)
         self.results_dir = Path("results")
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -93,11 +112,102 @@ class ExperimentManager:
         )
         return cls(config)
 
-    def get_model_and_dataloader(self):
-        """Initialize model and dataloader"""
-        self.setup_model()
-        self.create_dataloader()
-        return self.model, self.dataloader
+    def load_dataset_from_hf(
+        self, dataset_name_or_object: Union[str, Dataset] = "francescortu/whoops-aha"
+    ):
+        """Load a dataset from Hugging Face"""
+        if isinstance(dataset_name_or_object, Dataset):
+            self.dataset = dataset_name_or_object
+        else:
+            self.dataset = load_dataset(dataset_name_or_object)
+
+        self.dataset = (
+            self.dataset["train"] if "train" in self.dataset else self.dataset
+        )
+        return self
+
+    def load_dataset_from_local(
+        self, dataset_path: Path = Path("data/emnlp_submission/dataset")
+    ):
+        csv_path = dataset_path / "whoops-aha!.csv"
+        images_path = dataset_path / "images"
+
+        # Load CSV data
+        try:
+            df = pd.read_csv(csv_path)
+        except FileNotFoundError:
+            raise
+
+        # Create a list to hold dataset items
+        dataset_items = []
+
+        for _, row in tqdm(
+            df.iterrows(), total=df.shape[0], desc="Loading dataset items"
+        ):
+            image_filename = row["image_filename"]
+            image_file_path = images_path / image_filename
+
+            if not image_file_path.exists():
+                print(f"Image file not found: {image_file_path}, skipping this item.")
+                continue
+
+            try:
+                # Load image using PIL
+                from PIL import Image
+
+                img = Image.open(image_file_path)
+
+                dataset_item = {
+                    "image": img,
+                    "text": row["text"],  # Assuming 'theme' is the text column
+                    "image_id": image_filename,
+                    # Explicitly get factual/counterfactual tokens, as they might be used later.
+                    # Default to None if not present in the CSV.
+                    "factual_tokens": ast.literal_eval(row.get("factual_tokens")),
+                    "counterfactual_tokens": ast.literal_eval(
+                        row.get("counterfactual_tokens")
+                    ),
+                }
+                # Add all other columns from the CSV to the dataset_item,
+                # skipping those already handled or special.
+                for col in df.columns:
+                    if col not in [
+                        "image_filename",
+                        "theme",
+                        "factual_tokens",
+                        "counterfactual_tokens",
+                    ]:
+                        dataset_item[col] = row[col]
+
+                dataset_items.append(dataset_item)
+            except Exception as e:
+                print(f"Error processing image {image_file_path}: {e}")
+                continue
+
+        if not dataset_items:
+            print("No items were successfully loaded into the dataset.")
+            raise ValueError("Dataset could not be created as no items were loaded.")
+
+        # Create Hugging Face Dataset from pandas DataFrame
+        # This requires specifying features if there are complex types like PIL.Image.Image
+        # For images, datasets library handles PIL Image objects directly.
+        self.dataset = Dataset.from_list(dataset_items)
+
+    def setup_model(self, device_map="auto"):
+        """Initialize model and tokenizers"""
+        self.logger.info(f"Loading model: {self.config.model_name}")
+        self.model = HookedModel.from_pretrained(
+            self.config.model_name, device_map=device_map
+        )
+        self.tokenizer = self.model.get_processor()
+        self.text_tokenizer = self.model.get_text_tokenizer()
+        self.logger.info("Model loaded successfully")
+
+    # def get_model_and_dataloader(self):
+    #     """Initialize model and dataloader"""
+    #     self.setup_model()
+    #     self.create_dataloader()
+    #     return self.model, self.dataloader
 
     def setup_logging(self):
         """Configure logging with both file and console output"""
@@ -131,123 +241,40 @@ class ExperimentManager:
         self.logger.info("Logger initialized")
         return self
 
-    def setup_model(self, device_map="auto"):
-        """Initialize model and tokenizers"""
-        self.logger.info(f"Loading model: {self.config.model_name}")
-        self.model = HookedModel.from_pretrained(
-            self.config.model_name, device_map=device_map
-        )
-        self.tokenizer = self.model.get_processor()
-        self.text_tokenizer = self.model.get_text_tokenizer()
-        self.logger.info("Model loaded successfully")
-
-        return self
-    
-    def load_dataset(self):
-        """Load the dataset from the dataset folder"""
-        self.logger.info(f"Loading dataset: {self.config.dataset_name}")
-        
-        # Define paths
-        dataset_path = Path("dataset")
-        csv_path = dataset_path / "whoops-aha!.csv"
-        images_path = dataset_path / "images"
-
-        # Load CSV data
-        try:
-            df = pd.read_csv(csv_path)
-        except FileNotFoundError:
-            self.logger.error(f"CSV file not found at {csv_path}")
-            raise
-        
-        # Create a list to hold dataset items
-        dataset_items = []
-        
-        for _, row in tqdm(df.iterrows(), total=df.shape[0], desc="Loading dataset items"):
-            image_filename = row["image_filename"]
-            image_file_path = images_path / image_filename
-            
-            if not image_file_path.exists():
-                self.logger.warning(f"Image file not found: {image_file_path}, skipping this item.")
-                continue
-
-            try:
-                # Load image using PIL
-                from PIL import Image
-                img = Image.open(image_file_path)
-                
-                # Ensure image is in RGB format if it's not (e.g. RGBA, P, etc.)
-                if img.mode != "RGB":
-                    img = img.convert("RGB")
-
-                dataset_item = {
-                    "image": img,
-                    "text": row["theme"],  # Assuming 'theme' is the text column
-                    "image_id": image_filename,
-                    # Explicitly get factual/counterfactual tokens, as they might be used later.
-                    # Default to None if not present in the CSV.
-                    "factual_tokens": row.get("factual_tokens"),
-                    "counterfactual_tokens": row.get("counterfactual_tokens")
-                }
-                # Add all other columns from the CSV to the dataset_item,
-                # skipping those already handled or special.
-                for col in df.columns:
-                    if col not in ["image_filename", "theme", "factual_tokens", "counterfactual_tokens"]:
-                        dataset_item[col] = row[col]
-
-                dataset_items.append(dataset_item)
-            except Exception as e:
-                self.logger.error(f"Error processing image {image_file_path}: {e}")
-                continue
-        
-        if not dataset_items:
-            self.logger.error("No items were successfully loaded into the dataset.")
-            raise ValueError("Dataset could not be created as no items were loaded.")
-
-        # Convert list of dicts to Hugging Face Dataset
-        # We need to determine the features dynamically or define them explicitly
-        # For simplicity, let's convert to a pandas DataFrame first, then to Dataset
-        processed_df = pd.DataFrame(dataset_items)
-        
-        # Create Hugging Face Dataset from pandas DataFrame
-        # This requires specifying features if there are complex types like PIL.Image.Image
-        # For images, datasets library handles PIL Image objects directly.
-        hf_dataset = Dataset.from_pandas(processed_df)
-        
-        self.logger.info(f"Dataset loaded successfully with {len(hf_dataset)} items.")
-        return hf_dataset
-
-    def create_dataloader(self, filename: Optional[Path] = None, filter: bool = True):
+    def setup_dataloader(self):
         """Create and save the dataloader with both image and text inputs"""
-        if filename is not None and os.path.exists(self.dataloader_dir / filename):
-            self.logger.info(f"Loading dataloader from {filename}")
-            self.dataloader = torch.load(self.dataloader_dir / filename)
-            self.logger.info(f"Dataloader loaded from {filename}")
-            return self
+        assert self.dataset is not None, (
+            "Dataset must be loaded before creating dataloader"
+        )
+        assert self.model is not None, (
+            "Model must be initialized before creating dataloader"
+        )
+        assert self.tokenizer is not None, (
+            "Tokenizer must be initialized before creating dataloader"
+        )
 
         if not self.model or not self.tokenizer or not self.text_tokenizer:
             raise ValueError("Model must be initialized before creating dataloader")
 
         self.logger.info("Creating new dataloader...")
-        dataset = self.load_dataset()
-        # Cast to more specific type
-        if isinstance(dataset, (Dataset, DatasetDict)):
-            self.dataset = dataset
-        else:
-            raise ValueError(f"Unsupported dataset type: {type(dataset)}")
 
-        # Handle both Dataset and DatasetDict types
-        train_data = dataset["train"] if isinstance(dataset, DatasetDict) else dataset
-        if not hasattr(train_data, "__len__"):
-            train_data = list(train_data)
-        self.logger.info(f"Dataset loaded. Train split length: {len(train_data)}")
+        self.logger.info(f"Dataset loaded. Length: {len(self.dataset)}")
 
         # In debug mode, take only the first few examples
-        dataset_iter = train_data
-        if self.config.debug:
+        dataset_iter = self.dataset
+        if self.config.debug.debug:
             self.logger.info(
-                f"Debug mode: using only first {self.config.debug_samples} examples"
+                f"Debug mode: using only first {self.config.debug.debug_samples} examples"
             )
-            dataset_iter = list(dataset_iter)[: self.config.debug_samples]
+            dataset_iter = list(dataset_iter)[: self.config.debug.debug_samples]
+        if self.config.dataset_subset == "small1":
+            self.logger.info("Using small1 subset of the dataset")
+            dataset_iter = list(dataset_iter)[:250]
+        elif self.config.dataset_subset == "small2":
+            self.logger.info("Using small2 subset of the dataset")
+            dataset_iter = list(dataset_iter)[250]
+        else:
+            self.logger.info("Using full dataset")
 
         self.dataloader = []
         for item in tqdm(dataset_iter, desc="Processing dataset"):
@@ -289,81 +316,177 @@ class ExperimentManager:
                 }
             )
 
-        if filter:
+        # if filter:
+        #     self.logger.info("Filtering dataloader...")
+        #     self.filter_dataloader()
+
+        # return self
+
+    def setup_model_specific_variables(
+        self,
+        filter_dataloader: bool = True,
+        # compute_baseline: bool = True,
+    ):
+        assert self.model is not None, (
+            "Model must be initialized before setting up variables"
+        )
+        assert self.dataloader is not None, (
+            "Dataloader must be initialized before setting up variables"
+        )
+        assert self.tokenizer is not None, (
+            "Tokenizer must be initialized before setting up variables"
+        )
+        assert self.text_tokenizer is not None, (
+            "Text tokenizer must be initialized before setting up variables"
+        )
+
+        self.logger.info("Setting up model-specific variables...")
+
+        self.logger.info("Getting token pairs...")
+        self.token_pair, self.baseline = self.compute_token_pair()
+        self.logger.info(f"Got {len(self.token_pair)} token pairs")
+
+        if filter_dataloader:
             self.logger.info("Filtering dataloader...")
-            self.filter_dataloader()
+            self.token_pair, self.dataloader, self.baseline = self.filter_dataloader()
 
-        if filename is not None:
-            self.logger.info(f"Saving dataloader to {filename}")
-            torch.save(self.dataloader, self.dataloader_dir / filename)
-            self.logger.info(f"Dataloader saved to {filename}")
+        # baseline_deprecated = self.deprecated_run_baseline_stats()
+        # assert baseline_deprecated["Fact Acc"] == self.baseline["Fact Acc"]
 
-        return self
+    def compute_token_pair(self):
+        """Compute the token pairs for counterfactual and factual tokens"""
+        assert self.dataloader is not None, (
+            "Dataloader must be initialized before computing token pairs"
+        )
+        assert self.model is not None, (
+            "Model must be initialized before computing token pairs"
+        )
+        assert self.text_tokenizer is not None, (
+            "Text tokenizer must be initialized before computing token pairs"
+        )
 
-    def filter_dataloader(self):
-        if self.token_pair is None:
-            self.get_token_pair()
-        data = statistics_computer(
+        token_pair, baseline = statistics_computer(
             model=self.model,
             dataloader=self.dataloader,
             write_to_file=False,
             filename=None,
             dataset_path=Path(""),
-            given_token_pair=self.token_pair,
-            return_essential_data=True,
+            given_token_pair=None,
+            # return_essential_data=True,
+        )
+        self.logger.info("compute_token_pair: Token pairs computed successfully")
+        return token_pair, baseline
+
+    def filter_dataloader(self):
+        assert self.model is not None, (
+            "Model must be initialized before filtering dataloader"
+        )
+        assert self.dataloader is not None, (
+            "Dataloader must be initialized before filtering"
+        )
+        assert self.token_pair is not None, (
+            "Token pair must be initialized before filtering dataloader"
+        )
+        assert self.baseline is not None, (
+            "Baseline must be computed before filtering dataloader"
         )
 
-        indexes_cfact_gt_fact_text = data["indexes_cfact_gt_fact_text"]
-        self.logger.info(
-            f"Filtering dataloader: {len(self.dataloader)} -> {len(self.dataloader) - len(indexes_cfact_gt_fact_text)}. Removing {len(indexes_cfact_gt_fact_text)} samples"
-        )
-
-        self.dataloader = [
-            item
-            for i, item in enumerate(self.dataloader)
-            if i not in indexes_cfact_gt_fact_text
-        ]
-        self.token_pair = [
-            item
-            for i, item in enumerate(self.token_pair)
-            if i not in indexes_cfact_gt_fact_text
-        ]
-        self.logger.info(f"Filtered dataloader length: {len(self.dataloader)}")
-        self.logger.info(f"Index removed: {indexes_cfact_gt_fact_text}")
-        for i, pair in enumerate(self.token_pair):
-            self.logger.info(f"Token pair {i}: {pair}")
-        self.logger.info("Dataloader filtered successfully")
-
-    def select_heads(
-        self, k_heads=20, return_df: bool = False, perc=0.02, sampling_mode="percentile", metric="accuracy"
-    ) -> Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]:
-        """Use LogitLens to identify counterfactual and factual heads
-        Returns:
-            Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]: Lists of (layer, head) tuples for cfact and fact heads
-        """
-        if not self.model or not self.dataloader:
-            raise ValueError(
-                "Model and dataloader must be initialized before selecting heads"
-            )
-
-        self.logger.info("Starting head selection with LogitLens analysis...")
-        logit_lens = LogitLens.from_model(self.model)
-
-        # First get token pairs from statistics_computer
-        self.logger.info("Computing statistics to get token pairs...")
-        # _, _, _, token_pair = statistics_computer(
+        # data, token_pair = statistics_computer(
         #     model=self.model,
         #     dataloader=self.dataloader,
         #     write_to_file=False,
         #     filename=None,
         #     dataset_path=Path(""),
-        #     return_essential_data=False,
+        #     given_token_pair=self.token_pair,
+        #     # return_essential_data=True,
         # )
-        if self.token_pair is None:
-            token_pair = self.get_token_pair()
-            self.logger.info(f"Got {len(token_pair)} token pairs")
-        else:
-            token_pair = self.token_pair
+
+        indexes_cfact_gt_fact_text = self.baseline["indexes_cfact_gt_fact_text"]
+        self.logger.info(
+            f"Filtering dataloader: {len(self.dataloader)} -> {len(self.dataloader) - len(indexes_cfact_gt_fact_text)}. Removing {len(indexes_cfact_gt_fact_text)} samples"
+        )
+
+        dataloader = []
+        token_pair = []
+        self.map_filtered_to_original_index = {}
+        for i in range(len(self.dataloader)):
+            if i not in indexes_cfact_gt_fact_text:
+                # add to dataloader
+                dataloader.append(self.dataloader[i])
+                token_pair.append(self.token_pair[i])
+                self.map_filtered_to_original_index[len(dataloader) - 1] = i
+
+        # dataloader = [
+        #     item
+        #     for i, item in enumerate(self.dataloader)
+        #     if i not in indexes_cfact_gt_fact_text
+        # ]
+        # token_pair = [
+        #     item
+        #     for i, item in enumerate(self.token_pair)
+        #     if i not in indexes_cfact_gt_fact_text
+        # ]
+        self.logger.info(f"Filtered dataloader length: {len(self.dataloader)}")
+        self.logger.info(f"Index removed: {indexes_cfact_gt_fact_text}")
+        # for i, pair in enumerate(self.token_pair):
+        #     self.logger.info(f"Token pair {i}: {pair}")
+
+        self.logger.info("Baseline found. Updating with filtered data")
+        _, new_baseline = statistics_computer(
+            model=self.model,
+            dataloader=dataloader,
+            write_to_file=False,
+            filename=None,
+            dataset_path=Path(""),
+            given_token_pair=token_pair,
+            # return_essential_data=True,
+        )
+        self.logger.info(
+            f"New baseline computed after filtering dataloader: {self.baseline['Fact Acc']} -> {new_baseline['Fact Acc']}"
+        )
+        return token_pair, dataloader, new_baseline
+
+    def launch_std_setup_routine(self, device_map="auto"):
+        """Run the setup routine for the experiment"""
+        self.logger.info("Running setup routine...")
+        self.load_dataset_from_hf()
+        self.logger.info("Dataset loaded successfully")
+        self.setup_model(device_map=device_map)
+        self.logger.info("Model loaded successfully")
+        self.setup_dataloader()
+        self.logger.info("Dataloader created successfully")
+        self.setup_model_specific_variables(filter_dataloader=True)
+        self.logger.info("Model-specific variables set up successfully")
+        self.logger.info("Setup routine completed successfully")
+
+    def select_heads(
+        self,
+        k_heads=20,
+        return_df: bool = False,
+        perc=0.02,
+        sampling_mode="fixed_number",
+        metric="accuracy",
+    ) -> Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]:
+        """Use LogitLens to identify counterfactual and factual heads
+        Returns:
+            Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]: Lists of (layer, head) tuples for cfact and fact heads
+        """
+        assert self.model is not None, (
+            "Model must be initialized before selecting heads"
+        )
+        assert self.dataloader is not None, (
+            "Dataloader must be initialized before selecting heads"
+        )
+        assert self.token_pair is not None, (
+            "Token pair must be initialized before selecting heads"
+        )
+        assert self.text_tokenizer is not None, (
+            "Text tokenizer must be initialized before selecting heads"
+        )
+        assert k_heads > 0, "k_heads must be a positive integer"
+
+        self.logger.info("Starting head selection with LogitLens analysis...")
+        logit_lens = LogitLens.from_model(self.model)
 
         # Extract cache for analysis
         self.logger.info("Extracting model cache...")
@@ -382,7 +505,7 @@ class ExperimentManager:
 
         # Process tokens using tokenizer with proper handling
         token_directions = []
-        for t0, t1 in token_pair:
+        for t0, t1 in self.token_pair:
             if hasattr(self.text_tokenizer, "tokenizer"):
                 # Handle processor with tokenizer attribute
                 result0 = self.text_tokenizer.tokenizer(t0, return_tensors="pt")
@@ -404,26 +527,23 @@ class ExperimentManager:
             activations=cache,
             target_key="head_out_L{i}H{j}",
             token_directions=token_directions,
-            # metric="accuracy",
-            metric=metric,
+            metric="accuracy",
+            # metric=metric,
         )
 
         # Calculate mean impact of each head
         # mean_out = {
         #     k: float(2 * (v.mean().detach().cpu() - 0.5)) for k, v in out.items()
         # }
-        # mean_out = {
-        #     k: float((v.mean().detach().cpu() - 0.5)) for k, v in out.items()
-        # }
+        mean_out = {k: float((v.mean().detach().cpu() - 0.5)) for k, v in out.items()}
 
-        mean_out = {
-            k: float((v.mean().detach().cpu() )) for k, v in out.items()
-        }
+        # mean_out = {
+        #     k: float((v.mean().detach().cpu() )) for k, v in out.items()
+        # }
         # Convert to dataframe for analysis
         df = pd.DataFrame(mean_out.items(), columns=["Head", "Value"])
 
-        if sampling_mode=="fixed_number":
-
+        if sampling_mode == "fixed_number":
             full_cfact_heads = df[df["Value"] > 0]
             full_fact_heads = df[df["Value"] < 0]
 
@@ -436,7 +556,7 @@ class ExperimentManager:
             qs = df["Value"].quantile([1 - perc, perc])
             cfact_heads_df = df[df["Value"] > qs[0]]
             fact_heads_df = df[df["Value"] < qs[1]]
-            
+
         # Extract (layer, head) tuples
         import re
 
@@ -474,16 +594,12 @@ class ExperimentManager:
         # Store heads in instance variables and return them
         self.cfact_heads = cfact_heads
         self.fact_heads = fact_heads
-        self.token_pair = token_pair
         del cache
         if return_df:
             return df
         return cfact_heads, fact_heads
 
-
-    def logit_lens_attn_and_mlp(
-        self, return_df: bool = True
-    ):
+    def logit_lens_attn_and_mlp(self, return_df: bool = True):
         logit_lens = LogitLens.from_model(self.model)
         cache = self.model.extract_cache(
             [d["text_image_inputs"] for d in self.dataloader],
@@ -528,222 +644,289 @@ class ExperimentManager:
             token_directions=token_directions,
             metric="accuracy",
         )
-        
+
         out_attn = {
             k: float((v.mean().detach().cpu() - 0.5)) for k, v in out_attn.items()
         }
         out_mlp = {
             k: float((v.mean().detach().cpu() - 0.5)) for k, v in out_mlp.items()
         }
-        
+
         # Convert to dataframe for analysis
         df_attn = pd.DataFrame(out_attn.items(), columns=["Type", "Value"])
         df_mlp = pd.DataFrame(out_mlp.items(), columns=["Type", "Value"])
-        
+
         return df_attn, df_mlp
-        
-        
-        
 
-    def get_token_pair(self, filename: Optional[Path] = None) -> List[Tuple[str, str]]:
-        if filename is not None and os.path.exists(self.dataloader_dir / filename):
-            self.logger.info(f"Loading token pairs from {filename}")
-            token_pair = torch.load(self.dataloader_dir / filename)
-            self.logger.info(f"Token pairs loaded from {filename}")
-            return token_pair
-
-        if not self.model or not self.dataloader:
-            raise ValueError(
-                "Model and dataloader must be initialized before running baseline stats"
-            )
-
-        self.logger.info("Running baseline statistics...")
-        _, _, _, token_pair = statistics_computer(
-            model=self.model,
-            dataloader=self.dataloader,
-            write_to_file=False,
-            filename=None,
-            dataset_path=Path(""),
-            return_essential_data=False,
+    def get_baseline(self):
+        """Get the baseline statistics"""
+        assert self.baseline is not None, (
+            "Baseline must be computed before accessing it"
         )
-        self.token_pair = token_pair
-        self.logger.info(f"Got {len(token_pair)} token pairs")
+        return self.baseline
 
-        if filename is not None:
-            self.logger.info(f"Saving token pairs to {filename}")
-            torch.save(token_pair, self.dataloader_dir / filename)
-            self.logger.info(f"Token pairs saved to {filename}")
+    def get_token_pair(self):
+        return self.token_pair, self.baseline
 
-        return token_pair
-
-    def run_baseline_stats(self, filename: Optional[str] = None) -> Dict[str, Any]:
-        """Run baseline statistics on the dataset"""
-        filename_token_pair = (
-            filename.split(".")[0] + "_token_pair.pt" if filename else None
-        )
-        filename_baseline = (
-            filename.split(".")[0] + "_baseline.pt" if filename else None
-        )
-        filename_token_pair = Path(filename_token_pair) if filename_token_pair else None
-        filename_baseline = Path(filename_baseline) if filename_baseline else None
-
-        if (
-            filename_token_pair
-            and filename_baseline
-            and os.path.exists(self.dataloader_dir / filename_baseline)
-            and os.path.exists(self.dataloader_dir / filename_token_pair)
-        ):
-            self.logger.info(f"Loading baseline stats from {filename_baseline}")
-            baseline_data = torch.load(self.dataloader_dir / filename_baseline)
-            self.token_pair = torch.load(self.dataloader_dir / filename_token_pair)
-            self.logger.info(f"Baseline stats loaded from {filename_baseline}")
-            return baseline_data
-        if not self.model or not self.dataloader:
-            raise ValueError(
-                "Model and dataloader must be initialized before running baseline stats"
-            )
-
-        self.logger.info("Running baseline statistics...")
-        if self.token_pair is None:
-            token_pair = self.get_token_pair(filename=filename_token_pair)
-            self.logger.info(f"Got {len(token_pair)} token pairs")
-        else:
-            token_pair = self.token_pair
-
-        baseline_data = statistics_computer(
-            model=self.model,
-            dataloader=self.dataloader,
-            write_to_file=False,
-            filename=None,
-            dataset_path=Path(""),
-            given_token_pair=token_pair,
-            return_essential_data=True,
-            compute=["image"],
-        )
-        if filename_baseline:
-            self.logger.info(f"Saving baseline stats to {filename_baseline}")
-            torch.save(baseline_data, self.dataloader_dir / filename_baseline)
-            self.logger.info(f"Baseline stats saved to {filename_baseline}")
-
-        return baseline_data
-
-    def save(self, state_name: str) -> Path:
-        """Save the current state of the experiment
-
-        Args:
-            state_name: A name for this saved state
-
-        Returns:
-            Path to the saved state file
+    def return_generation_logits(self):
         """
-        self.logger.info(f"Saving experiment state: {state_name}")
+        The return_generation_logits method computes the logits for the generation task. It uses the model to generate text based on the provided image and text inputs, and returns the logits for further analysis.
+        """
 
-        # Create timestamp for directory naming
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        # first, create a dataloader for generation
+        assert self.dataloader is not None, (
+            "Dataloader must be initialized before generating logits"
+        )
 
-        # Create the directory structure in tmp/experiment_stats/date_time
-        save_dir = Path("tmp/experiment_stats") / timestamp
-        save_dir.mkdir(parents=True, exist_ok=True)
+        logits = []
+        generated_tokens = []
+        generation_instruction = "Describe the image:"
+        generation_dataloader = []
+        for i, item in tqdm(enumerate(self.dataloader), desc="Generating logits", total=len(self.dataloader)):
+            generation_text = self.config.prompt_templates[
+                self.config.model_name + "-instruction"
+            ].format(text=generation_instruction)
+            generation_inputs = self.tokenizer(  # type: ignore
+                text=generation_text,
+                images=[item["image"].convert("RGB")],
+                return_tensors="pt",
+            )
+            generation_output = self.model.generate(
+                # inputs=self.dataloader[i]["text_image_inputs"],
+                inputs=generation_inputs,
+                target_token_positions=["last"],
+                generation_config=GenerationConfig(
+                    max_new_tokens=50,  # Adjust as needed
+                    do_sample=False,  # Set to True for sampling
+                    output_logits=True,  # Ensure logits are returned
+                    return_dict_in_generate=True,  # Return logits in the output
+                ),
+                # extraction_config=ExtractionConfig(
+                #     save_logits=True,
+                # )
+            )
+            logits.append(torch.stack(generation_output["logits"]).squeeze())
+            generated_tokens.append(generation_output["sequences"][:, -50:])
 
-        # Create filename based on state name and experiment tag
-        filename = f"{self.config.experiment_tag}_{state_name}.pt"
-        save_path = save_dir / filename
+        max_len = max(l.shape[0] for l in logits)
 
-        # Create a state dictionary with all necessary information
-        # Avoid saving the model - just save the name
-        state = {
-            "config": self.config.to_dict(),
-            "dataloader": self.dataloader,
-            "token_pair": self.token_pair,
-            "cfact_heads": self.cfact_heads,
-            "fact_heads": self.fact_heads,
-            "baseline": self.baseline,
-            "state_name": state_name,
-            "timestamp": timestamp,
+        # Pad logits and tokens
+        new_logits = []
+        new_tokens = []
+        removed_elements = []
+        for i in range(len(logits)):
+            l = logits[i]
+            t = generated_tokens[i]
+
+            len_diff = max_len - l.shape[0]
+
+            if len_diff > 0:
+                # skip that element if the length difference is greater than 0
+                # logits.pop(i)
+                # generated_tokens.pop(i)
+                removed_elements.append(i)
+            else:
+                new_logits.append(l)
+                new_tokens.append(t)
+                
+
+
+        # return torch.stack(padded_logits), torch.stack(padded_tokens)
+        return torch.stack(new_logits), torch.stack(new_tokens), removed_elements
+
+    def get_logprobs(self, logits, index):
+        B, T, V = logits.shape
+
+        index = index.squeeze(1)
+
+        logits_flat = logits.view(-1, V)
+        index_flat = index.view(-1)
+
+        # Get the log probabilities for the specified indices
+        log_probs_flat = selective_log_softmax(logits_flat, index_flat)
+
+        logps = log_probs_flat.view(B, T)
+        return logps
+
+    def evaluate_generation_quality(self, base_generation_output):
+        """
+        The evaluate_generation_quality is a method to measure the KL divergence between the clean and intervened model outputs during generation. The model is tasked with a .generatio() task with a text like "Describe the image" and the model is expected to generate a description of the image.
+        """
+        self.model.use_full_model()
+        base_logit, base_generated_tokens,base_removed_elements = base_generation_output
+        intervened_logit, intervened_generated_tokens, intervened_removed_elements = self.return_generation_logits()
+
+        if len(base_removed_elements) > 0:
+            raise ValueError(
+                f"Base generation output has removed elements: {base_removed_elements}. This should not happen."
+            )
+        if len(intervened_removed_elements) > 0:
+            # remove from base_logit and base_generated_tokens the same elements
+            self.logger.warning(
+                f"Intervened generation output has removed elements: {intervened_removed_elements}. This should not happen."
+            )
+            base_logit = torch.stack(
+                [
+                    base_logit[i]
+                    for i in range(len(base_logit))
+                    if i not in intervened_removed_elements
+                ]
+            )
+            base_generated_tokens = torch.stack(
+                [
+                    base_generated_tokens[i]
+                    for i in range(len(base_generated_tokens))      
+                    if i not in intervened_removed_elements
+                ]
+            )
+            
+        
+        # sample some intervened tokens
+        sample_intervened_tokens = intervened_generated_tokens[:10, :]
+        # de-tokenize
+        sample_intervened_text = self.text_tokenizer.batch_decode(
+            sample_intervened_tokens.squeeze(), skip_special_tokens=True
+        )
+
+        for i, text in enumerate(sample_intervened_text):
+            self.logger.info(f"--------- Sample {i} intervened text: {text}")
+        # self.logger.info(
+        #     f"Sample intervened tokens: {sample_intervened_tokens}, decoded text: {sample_intervened_text}"
+        # )
+
+        intervened_logprobs = self.get_logprobs(
+            intervened_logit, intervened_generated_tokens
+        )
+        base_logprobs = self.get_logprobs(base_logit, intervened_generated_tokens)
+
+        # per_token_kl = (
+        #     torch.exp(intervened_logprobs - base_logprobs)
+        #     - (intervened_logprobs - base_logprobs)
+        #     - 1
+        # )
+        per_token_kl = (
+            torch.exp(base_logprobs - intervened_logprobs)
+            - (base_logprobs - intervened_logprobs)
+            - 1
+        )
+        # make a mask for the completion tokens
+        completion_mask = torch.ones_like(per_token_kl)
+
+        mean_kl = (per_token_kl * completion_mask).sum() / completion_mask.sum()
+        print("Mean KL Divergence:", mean_kl.item())
+        return {"mean_kl": mean_kl.item()}
+
+    # def deprecated_run_baseline_stats(self, filename: Optional[str] = None) -> Dict[str, Any]:
+    #     """Run baseline statistics on the dataset"""
+
+    #     self.logger.info("Running baseline statistics...")
+
+    #     token_pair, baseline_data = statistics_computer(
+    #         model=self.model,
+    #         dataloader=self.dataloader,
+    #         write_to_file=False,
+    #         filename=None,
+    #         dataset_path=Path(""),
+    #         given_token_pair=self.token_pair,
+    #         # return_essential_data=True,
+    #         compute=["image"],
+    #     )
+    #     assert token_pair == self.token_pair, "Token pair mismatch after statistics computation"
+    #     return baseline_data
+    def evaluate_coco(self):
+        self.logger.info("Loading COCO dataset...")
+        coco_dataset = load_dataset("yerevann/coco-karpathy", split="test")
+
+        # Get 100 unique image ids
+        unique_image_ids = list(set(coco_dataset["imgid"]))[:100]
+
+        # Filter the dataset to only include those images
+        subset_dataset = coco_dataset.filter(
+            lambda example: example["imgid"] in unique_image_ids
+        )
+
+        self.logger.info("Generating captions...")
+        results = []
+
+        # Create a dictionary to hold unique images
+        images_for_captioning = {}
+        for item in subset_dataset:
+            if item["imgid"] not in images_for_captioning:
+                try:
+                    with urllib.request.urlopen(item["url"]) as url_response:
+                        image_data = url_response.read()
+                    image = Image.open(io.BytesIO(image_data))
+                    images_for_captioning[item["imgid"]] = image
+                except Exception as e:
+                    self.logger.warning(
+                        f"Failed to download or open image for imgid {item['imgid']} from {item['url']}. Error: {e}. Skipping."
+                    )
+
+        # Filter the dataset to ensure it only contains successfully loaded images
+        subset_dataset = subset_dataset.filter(
+            lambda example: example["imgid"] in images_for_captioning
+        )
+
+        for image_id, image in tqdm(
+            images_for_captioning.items(), desc="Generating captions"
+        ):
+            image = image.convert("RGB")
+
+            generation_instruction = "A picture of"
+            generation_text = self.config.prompt_templates[
+                self.config.model_name + "-instruction"
+            ].format(text=generation_instruction)
+
+            inputs = self.text_tokenizer(
+                text=generation_text,
+                images=[image],
+                return_tensors="pt",
+            ).to(self.model.device)
+
+            generated_ids = self.model.generate(**inputs, max_new_tokens=50)
+            generated_caption = self.text_tokenizer.batch_decode(
+                generated_ids, skip_special_tokens=True
+            )[0].strip()
+
+            results.append({"image_id": image_id, "caption": generated_caption})
+
+        self.logger.info("Preparing ground truth annotations...")
+        annotations = {
+            "images": [],
+            "annotations": [],
+            "info": "dummy",
+            "licenses": "dummy",
+            "type": "captions",
         }
 
-        # Save the state using torch.save
-        torch.save(state, save_path)
-        self.logger.info(f"Experiment state saved to {save_path}")
+        img_ids = set()
+        for i, item in enumerate(subset_dataset):
+            if item["imgid"] not in img_ids:
+                annotations["images"].append({"id": item["imgid"]})
+                img_ids.add(item["imgid"])
 
-        # Also save the configuration as a separate JSON file for easy inspection
-        config_path = (
-            save_dir / f"{self.config.experiment_tag}_{state_name}_config.json"
-        )
-        with open(config_path, "w") as f:
-            json.dump(state["config"], f, indent=4)
-        self.logger.info(f"Configuration saved to {config_path}")
+            annotations["annotations"].append(
+                {
+                    "image_id": item["imgid"],
+                    "id": item["sentences"][0]["sentid"],
+                    "caption": item["sentences"][0]["raw"],
+                }
+            )
 
-        return save_path
+        self.logger.info("Evaluating with COCOeval...")
 
-    @classmethod
-    def load_state(
-        cls, state_path: Union[str, Path], load_model: bool = False
-    ) -> "ExperimentManager":
-        """Load an experiment state from a saved file
+        annotation_file = "tmp_annotations.json"
+        with open(annotation_file, "w") as f:
+            json.dump(annotations, f)
 
-        Args:
-            state_path: Path to the saved state file
-            load_model: Whether to also load the model (default: False)
+        result_file = "tmp_results.json"
+        with open(result_file, "w") as f:
+            json.dump(results, f)
 
-        Returns:
-            An ExperimentManager instance with the loaded state
-        """
-        # Ensure path is a Path object
-        state_path = Path(state_path)
+        coco = COCO(annotation_file)
+        coco_result = coco.loadRes(result_file)
 
-        # Load the state dictionary
-        state = torch.load(state_path)
+        coco_eval = COCOEvalCap(coco, coco_result)
+        coco_eval.evaluate()
 
-        # Try to load configuration from JSON if available
-        json_config_path = state_path.parent / f"{state_path.stem}_config.json"
-        config_data = state["config"]  # Default to state config
-        if json_config_path.exists():
-            try:
-                with open(json_config_path, "r") as f:
-                    config_data = json.load(f)
-                    print(f"Loaded configuration from {json_config_path}")
-            except Exception as e:
-                print(f"Could not load config from JSON: {e}")
-
-        # Create a new configuration from the loaded config data
-        config = BaseConfig(
-            model_name=config_data["model_name"],
-            dataset_name=config_data["dataset_name"],
-            experiment_tag=config_data["experiment_tag"],
-        )
-
-        # Set additional config parameters if they exist
-        if "extra_metadata" in config_data:
-            config.extra_metadata = config_data["extra_metadata"]
-        if "debug" in config_data:
-            config.debug = config_data["debug"]
-        if "debug_samples" in config_data:
-            config.debug_samples = config_data["debug_samples"]
-        if "prompt_templates" in config_data:
-            config.prompt_templates = config_data["prompt_templates"]
-
-        # Create a new instance with the loaded config
-        instance = cls(config)
-
-        # Set up logging
-        instance.setup_logging()
-        instance.logger.info(f"Loading experiment state from {state_path}")
-
-        # Restore saved state elements
-        instance.dataloader = state["dataloader"]
-        instance.token_pair = state["token_pair"]
-        instance.cfact_heads = state["cfact_heads"]
-        instance.fact_heads = state["fact_heads"]
-        instance.baseline = state["baseline"]
-
-        # Load model if requested
-        if load_model:
-            instance.logger.info(f"Loading model: {config.model_name}")
-            instance.setup_model()
-
-        instance.logger.info(
-            f"Loaded experiment state: {state.get('state_name', 'unnamed')} "
-            + f"from {state.get('timestamp', 'unknown time')}"
-        )
-        return instance
+        return coco_eval.eval

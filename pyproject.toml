@@ -1,0 +1,45 @@
+[tool.poetry]
+name = "VisualComp"
+version = "0.1.0"
+description = ""
+authors = ["Fracesc0rtu <francescortu@live.it>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.10"
+ipykernel = "^6.29.5"
+tqdm = "^4.67.1"
+pytest = "^8.3.3"
+sentencepiece = "^0.2.0"
+accelerate = "^1.1.1"
+datasets = "^3.1.0"
+statsmodels = "^0.14.4"
+seaborn = "^0.13.2"
+faiss-gpu = "^1.7.2"
+scikit-learn = "^1.5.2"
+hnswlib = "^0.8.0"
+openai = "^1.56.0"
+gradio = "^5.8.0"
+torchvision = "^0.19"
+rich = "^13.9.4"
+pandas = "^2.0.0"
+numpy = "^2.1.3"
+einops = "^0.8.0"
+python-dotenv = "^1.0.1"
+torch = "^2.4.0"
+pyyaml = "^6.0.2"
+transformers = "4.50"
+easyroutine = {git = "https://github.com/francescortu/easyroutine.git", branch = "VisualComp"}
+pycocotools = "^2.0.8"
+ollama = "^0.4.7"
+ipywidgets = "^8.1.7"
+ijson = "^3.4.0"
+pycocoevalcap = "^1.2"
+
+
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

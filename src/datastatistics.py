@@ -342,18 +342,26 @@ class StatisticsComputer:
         # Calculate statistics
         stats = self._calculate_final_statistics(stats)
 
-        if return_essential_data:
-            return self._prepare_essential_data(
-                stats,
-                image_cfact_logits,
-                image_fact_logits,
-                text_cfact_logits,
-                text_fact_logits,
-                return_topk,
-            )
+        # if return_essential_data:
+        #     return self._prepare_essential_data(
+        #         stats,
+        #         image_cfact_logits,
+        #         image_fact_logits,
+        #         text_cfact_logits,
+        #         text_fact_logits,
+        #         return_topk,
+        #     )
+        essential_data = self._prepare_essential_data(
+            stats,
+            image_cfact_logits,
+            image_fact_logits,
+            text_cfact_logits,
+            text_fact_logits,
+            return_topk,
+        )
 
-        report = self._generate_report(stats)
-        return report, [], [], token_pairs
+        # report = self._generate_report(stats)
+        return essential_data, token_pairs
 
     def _calculate_final_statistics(self, stats: StatisticsResult) -> StatisticsResult:
         """Calculate final statistics from raw data"""
@@ -475,22 +483,13 @@ class StatisticsComputer:
                     indexes_cfact_gt_fact_text.append(i)
 
         return {
-            "Image Cfact logit": stats.total_cfact_logit_images,
-            "Image Fact Logit": stats.total_fact_logit_images,
-            "Text Cfact Logit": stats.total_cfact_logit_text_only,
-            "Text Fact Logit": stats.total_fact_logit_text_only,
-            "Image Cfact>Fact": stats.cfact_higher_images / stats.valid_images * 100
+            "Fact Acc": 100 - (stats.cfact_higher_images / stats.valid_images * 100)
             if stats.valid_images
             else 0,
-            "Text Cfact>Fact": stats.cfact_higher_text / stats.valid_text * 100
-            if stats.valid_text
-            else 0,
-            "Image Valid Examples": stats.valid_images,
-            "Text Valid Examples": stats.valid_text,
+            "Image Cfact logit": stats.total_cfact_logit_images,
+            "Image Fact Logit": stats.total_fact_logit_images,
             "Image Pos Higher": np.array(stats.higher_pos_image, dtype=float).mean(),
-            "Text Pos Higher": -1 if not text_cfact_logits else np.array(stats.higher_pos_text, dtype=float).mean(),
-            "indexes_cfact_gt_fact_text": None if not text_cfact_logits else indexes_cfact_gt_fact_text
-            # "top_k_data": topk_data,
+            "indexes_cfact_gt_fact_text": indexes_cfact_gt_fact_text,
         }
 
     def _generate_report(self, stats: StatisticsResult) -> str:
@@ -499,14 +498,7 @@ class StatisticsComputer:
             "\n ======== Total Statistics ========\n"
             f"Total cfact logit images: {stats.total_cfact_logit_images}\n"
             f"Total fact logit images: {stats.total_fact_logit_images}\n"
-            f"Total cfact logit text only: {stats.total_cfact_logit_text_only}\n"
-            f"Total fact logit text only: {stats.total_fact_logit_text_only}\n"
             f"Number of valid examples (image+text): {stats.valid_images}\n"
-            f"Number of times cfact > fact (image+text): {stats.cfact_higher_images}/{stats.valid_images} "
-            f"-- {stats.cfact_higher_images / stats.valid_images * 100:.2f}%\n"
-            f"Number of valid examples (text only): {stats.valid_text}\n"
-            f"Number of times cfact > fact (text only): {stats.cfact_higher_text}/{stats.valid_text} "
-            f"-- {stats.cfact_higher_text / stats.valid_text * 100:.2f}%\n"
         )
 
 
@@ -519,18 +511,18 @@ def statistics_computer(
     dataset_path: Optional[Path] = None,
     compute: List[str] = ["image", "text"],
     given_token_pair: Optional[List[Tuple[str, str]]] = None,
-    return_essential_data: bool = False,
+    # return_essential_data: bool = False,
     return_topk: int = 20,
     interventions: Optional[Dict[int,List]] = None,
     disable_text_interventions: bool = False,
 ):
     """Backward compatible wrapper for StatisticsComputer"""
     computer = StatisticsComputer(model)
-    result = computer.compute_statistics(
+    data, token_pairs = computer.compute_statistics(
         dataloader=dataloader,
         compute=compute,
         given_token_pair=given_token_pair,
-        return_essential_data=return_essential_data,
+        # return_essential_data=return_essential_data,
         return_topk=return_topk,
         interventions=interventions,
         disable_text_interventions=disable_text_interventions,
@@ -543,4 +535,4 @@ def statistics_computer(
             else:
                 f.write(str(result))
 
-    return result
+    return token_pairs, data
