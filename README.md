@@ -2,11 +2,10 @@
 
 
 # When Seeing Overrides Knowing: Disentangling Knowledge Conflict in Vision-Language Models
-**Dataset: [WHOOPS-AHA!](https://huggingface.co/datasets/francescortu/whoops-aha)**
+**Dataset: [🤗 WHOOPS-AHA!](https://huggingface.co/datasets/francescortu/whoops-aha)**
 
 
 This repository contains the code and scripts for running experiments on the paper *"When Seeing Overrides Knowing: Disentangling Knowledge Conflict in Vision-Language Models"*. 
-## Installation
 
 ### Prerequisites
 
