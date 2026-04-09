@@ -1,9 +1,8 @@
 import argparse
 import importlib.util
-import json
 from pathlib import Path
 
-from src.paper_results import model_slug, normalize_intervention, write_table
+from src.paper_results import save_mlp_results
 
 
 full_path = Path(__file__).parent.parent / "1_heads_ablation" / "2_full.py"
@@ -26,7 +25,7 @@ def parse_args():
         nargs="+",
         type=float,
         default=[-50, -25, -10, -5, -3, -2, -1, 0, 1, 2, 3, 5, 10, 25, 50],
-        help="Signed intervention strengths reported as lambda in the paper-facing outputs.",
+        help="Signed intervention strengths reported as lambda in the saved results.",
     )
     parser.add_argument(
         "--mlp-layers",
@@ -58,10 +57,7 @@ def main():
 
     runner = FullExperimentRunner(cfg)
     df = runner.run()
-    write_table(
-        normalize_intervention(df, args.model),
-        Path("results/paper_tables") / f"appendix_mlp_{model_slug(args.model)}.csv",
-    )
+    save_mlp_results(df, args.model)
 
 
 if __name__ == "__main__":

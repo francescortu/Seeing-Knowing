@@ -12,33 +12,21 @@ from plot_functions import (
     plot_experiment2,
     plot_heads_heatmap,
 )
-from src.paper_results import build_default_paper_tables
+from src.paper_results import default_table_paths
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def parse_args():
-    parser = ArgumentParser(description="Generate paper plots from paper-facing result tables.")
+    parser = ArgumentParser(description="Generate plots from the canonical result tables.")
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("results/paper_figures"),
+        default=REPO_ROOT / "results" / "figures",
         help="Directory where the generated figures will be written.",
     )
     return parser.parse_args()
-
-
-def default_table_paths():
-    return {
-        "figure3_heads_llava": Path("results/paper_tables/figure3_heads_llava-next.csv"),
-        "figure3_heads_gemma": Path("results/paper_tables/figure3_heads_gemma3.csv"),
-        "figure3_attention_summary_llava": Path(
-            "results/paper_tables/figure3_attention_summary_llava-next.csv"
-        ),
-        "figure3_attention_summary_gemma": Path(
-            "results/paper_tables/figure3_attention_summary_gemma3.csv"
-        ),
-        "figure4_intervention": Path("results/paper_tables/figure4_intervention.csv"),
-        "figure5_localization": Path("results/paper_tables/figure5_localization.csv"),
-    }
 
 
 def main():
@@ -46,8 +34,12 @@ def main():
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     table_paths = default_table_paths()
-    if not all(path.exists() for path in table_paths.values()):
-        table_paths = build_default_paper_tables()
+    missing = [str(path.relative_to(REPO_ROOT)) for path in table_paths.values() if not path.exists()]
+    if missing:
+        raise FileNotFoundError(
+            "Missing results tables. Run the experiment scripts first: "
+            + ", ".join(missing)
+        )
 
     llava_heads = pd.read_csv(table_paths["figure3_heads_llava"])
     gemma_heads = pd.read_csv(table_paths["figure3_heads_gemma"])

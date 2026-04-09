@@ -17,6 +17,7 @@ sys.path.append(
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../.."))
 from src.experiment_manager import ExperimentManager
 from src.datastatistics import statistics_computer
+from src.paper_results import save_intervention_results, save_mlp_results
 from easyroutine.interpretability import Intervention
 from easyroutine.logger import logger, setup_logging
 
@@ -239,19 +240,10 @@ class FullExperimentRunner:
         return pd.DataFrame(results)
 
     def run(self, evaluate_generation_quality:bool = False, evaluate_coco:bool=False) -> pd.DataFrame:
-        df = self.evaluate(evaluate_generation_quality=evaluate_generation_quality, evaluate_coco=evaluate_coco)
-        ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        # Create folder structure: output_dir/tag_name/model_experiment_timestamp
-        tag_folder = self.cfg.output_dir / self.cfg.experiment_tag
-        out = tag_folder / f"{self.cfg.model_name.replace('/', '-')}_{ts}"
-        out.mkdir(parents=True, exist_ok=True)
-        csv = out / f"{self.cfg.experiment_tag}.csv"
-        cfgf = out / "config.json"
-        df.to_csv(csv, index=False)
-        with open(cfgf, "w") as f:
-            json.dump(self.cfg.__dict__, f, default=str, indent=2)
-        logger.info(f"Results saved to {csv}")
-        return df
+        return self.evaluate(
+            evaluate_generation_quality=evaluate_generation_quality,
+            evaluate_coco=evaluate_coco,
+        )
     
     # def run_generation_quality_evaluation(self) -> pd.DataFrame:
     #     """
@@ -309,7 +301,14 @@ def main() -> None:
     if args.mlp_layers:
         base.mlp_ablation_layers = args.mlp_layers
     runner = FullExperimentRunner(base)
-    runner.run(evaluate_generation_quality=args.evaluate_generation_quality, evaluate_coco=args.evaluate_coco)
+    result_df = runner.run(
+        evaluate_generation_quality=args.evaluate_generation_quality,
+        evaluate_coco=args.evaluate_coco,
+    )
+    if set(result_df["AblationType"].unique()) == {"mlp"}:
+        save_mlp_results(result_df, args.model)
+    else:
+        save_intervention_results(result_df, args.model)
 
 
 if __name__ == "__main__":

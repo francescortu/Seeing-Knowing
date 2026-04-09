@@ -16,7 +16,7 @@ import pandas as pd
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../src"))
 )
-from src.paper_results import model_slug, normalize_multik, write_table
+from src.paper_results import save_multik_results
 
 import importlib.util
 
@@ -80,13 +80,6 @@ def main():
     # parse k_heads list
     ks = [int(x) for x in args.ks.split(",") if x.strip()]
 
-    # timestamp and batch directory
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    # Create folder structure: results/1_heads_ablation/tag_name/model_timestamp
-    tag_folder = Path("results/1_heads_ablation") / args.tag
-    batch_dir = tag_folder / f"multik_{args.model.replace('/', '-')}_{timestamp}"
-    batch_dir.mkdir(parents=True, exist_ok=True)
-
     # base config
     base_cfg = FullExperimentConfig(model_name=args.model, experiment_tag=args.tag)
     if args.dataset:
@@ -105,14 +98,6 @@ def main():
         base_cfg.debug = True
     if args.debug_samples:
         base_cfg.debug_samples = args.debug_samples
-
-    # Save master config
-    master_config = base_cfg.__dict__.copy()
-    master_config["k_heads_values"] = ks
-    master_config["batch_run_timestamp"] = timestamp
-    master_config_path = batch_dir / "master_config.json"
-    with open(master_config_path, "w") as f:
-        json.dump(master_config, f, default=str, indent=2)
 
     results_list = []
     # run experiments for each k
@@ -139,24 +124,11 @@ def main():
         df_k["k_heads"] = k
         results_list.append(df_k)
 
-        # save individual results and config
-        subdir = batch_dir / f"k_{k}"
-        subdir.mkdir(exist_ok=True)
-        df_k.to_csv(subdir / f"results_k{k}.csv", index=False)
-        with open(subdir / "config.json", "w") as f:
-            json.dump(cfg.__dict__, f, default=str, indent=2)
-
     # combine
     if results_list:
         master_df = pd.concat(results_list, ignore_index=True)
-        master_csv = batch_dir / "multi_k_results.csv"
-        master_df.to_csv(master_csv, index=False)
-        write_table(
-            normalize_multik(master_df, args.model),
-            Path("results/paper_tables")
-            / f"appendix_multik_{model_slug(args.model)}.csv",
-        )
-        print(f"Combined results saved to {master_csv}")
+        save_multik_results(master_df, args.model)
+        print("Combined results saved.")
     else:
         print("No results generated.")
 

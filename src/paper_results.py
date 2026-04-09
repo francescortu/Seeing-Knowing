@@ -23,6 +23,9 @@ LOCALIZATION_METHODS = {
     "resid_ablation_grad": "Through Gradients",
 }
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+RESULTS_DIR = REPO_ROOT / "results"
+
 
 def model_label(model_name: str) -> str:
     return MODEL_LABELS.get(model_name, model_name)
@@ -263,147 +266,83 @@ def write_table(df: pd.DataFrame, output_path: Path) -> Path:
     return output_path
 
 
-def default_raw_artifact_paths() -> Dict[str, Path]:
+def _upsert_by_model(df: pd.DataFrame, output_path: Path) -> Path:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists():
+        existing = pd.read_csv(output_path)
+        if "model_slug" in existing.columns and "model_slug" in df.columns:
+            existing = existing[~existing["model_slug"].isin(df["model_slug"].unique())]
+        elif "model" in existing.columns and "model" in df.columns:
+            existing = existing[~existing["model"].isin(df["model"].unique())]
+        df = pd.concat([existing, df], ignore_index=True)
+    df.to_csv(output_path, index=False)
+    return output_path
+
+
+def save_head_selection_results(
+    raw_df: pd.DataFrame,
+    full_attention_df: pd.DataFrame,
+    model_name: str,
+    output_dir: Path = RESULTS_DIR,
+) -> Dict[str, Path]:
+    heads = normalize_head_selection(raw_df, model_name)
+    attention = summarize_attention_by_group(heads, full_attention_df)
+    slug = model_slug(model_name)
     return {
-        "heads_llava": Path(
-            "results/0_heads_selection/v16_arXiv/llava_2025-07-07_16-26-26/selected_heads.csv"
-        ),
-        "heads_gemma": Path(
-            "results/0_heads_selection/v16_arXiv/gemma_2025-07-03_18-20-56/selected_heads.csv"
-        ),
-        "heads_attn_llava": Path(
-            "results/0_heads_selection/v16_arXiv/llava_2025-07-07_16-26-26/full_attn_to_img.csv"
-        ),
-        "heads_attn_gemma": Path(
-            "results/0_heads_selection/v16_arXiv/gemma_2025-07-03_18-20-56/full_attn_to_img.csv"
-        ),
-        "intervention_llava": Path(
-            "results/1_heads_ablation/v16_arXiv/llava-hf-llava-v1.6-mistral-7b-hf_2025-07-12_19-05-07/v16_arXiv.csv"
-        ),
-        "intervention_gemma": Path(
-            "results/1_heads_ablation/v16_arXiv/google-gemma-3-12b-it_2025-07-14_17-28-15/v16_arXiv.csv"
-        ),
-        "multik_llava": Path(
-            "results/1_heads_ablation/v16_arXiv/multik_llava-hf-llava-v1.6-mistral-7b-hf_2025-07-10_14-01-00/multi_k_results.csv"
-        ),
-        "multik_gemma": Path(
-            "results/1_heads_ablation/v16_arXiv/multik_google-gemma-3-12b-it_2025-07-03_20-21-45/multi_k_results.csv"
-        ),
-        "mlp_llava": Path(
-            "results/1_heads_ablation/v16_MLP/llava-hf-llava-v1.6-mistral-7b-hf_2025-09-03_18-34-40/v16_MLP.csv"
-        ),
-        "mlp_gemma": Path(
-            "results/1_heads_ablation/v16_MLP/google-gemma-3-12b-it_2025-09-04_14-41-05/v16_MLP.csv"
-        ),
-        "localization_llava": Path(
-            "results/2_ImgCfactLocalization/v16_arXiv/llava-hf-llava-v1.6-mistral-7b-hf_2025-07-07_17-25-14/results.csv"
-        ),
-        "localization_gemma": Path(
-            "results/2_ImgCfactLocalization/v16_arXiv/google-gemma-3-12b-it_2025-07-03_18-56-49/results.csv"
+        "heads": write_table(heads, output_dir / f"figure3_heads_{slug}.csv"),
+        "attention_summary": write_table(
+            attention, output_dir / f"figure3_attention_summary_{slug}.csv"
         ),
     }
 
 
-def build_default_paper_tables(output_dir: Path = Path("results/paper_tables")) -> Dict[str, Path]:
-    raw_paths = default_raw_artifact_paths()
-    output_dir.mkdir(parents=True, exist_ok=True)
+def save_intervention_results(
+    raw_df: pd.DataFrame,
+    model_name: str,
+    output_dir: Path = RESULTS_DIR,
+) -> Path:
+    normalized = normalize_intervention(raw_df, model_name)
+    normalized = normalized[normalized["lambda"].between(-3, 3)].reset_index(drop=True)
+    return _upsert_by_model(normalized, output_dir / "figure4_intervention.csv")
 
-    llava_heads = normalize_head_selection(
-        pd.read_csv(raw_paths["heads_llava"]),
-        "llava-hf/llava-v1.6-mistral-7b-hf",
-    )
-    gemma_heads = normalize_head_selection(
-        pd.read_csv(raw_paths["heads_gemma"]),
-        "google/gemma-3-12b-it",
-    )
-    llava_attention = summarize_attention_by_group(
-        llava_heads, pd.read_csv(raw_paths["heads_attn_llava"])
-    )
-    gemma_attention = summarize_attention_by_group(
-        gemma_heads, pd.read_csv(raw_paths["heads_attn_gemma"])
-    )
 
-    intervention = pd.concat(
-        [
-            normalize_intervention(
-                pd.read_csv(raw_paths["intervention_llava"]),
-                "llava-hf/llava-v1.6-mistral-7b-hf",
-            ),
-            normalize_intervention(
-                pd.read_csv(raw_paths["intervention_gemma"]),
-                "google/gemma-3-12b-it",
-            ),
-        ],
-        ignore_index=True,
-    )
+def save_localization_results(
+    raw_df: pd.DataFrame,
+    model_name: str,
+    output_dir: Path = RESULTS_DIR,
+) -> Path:
+    normalized = normalize_localization(raw_df, model_name)
+    return _upsert_by_model(normalized, output_dir / "figure5_localization.csv")
 
-    localization = pd.concat(
-        [
-            normalize_localization(
-                pd.read_csv(raw_paths["localization_llava"]),
-                "llava-hf/llava-v1.6-mistral-7b-hf",
-            ),
-            normalize_localization(
-                pd.read_csv(raw_paths["localization_gemma"]),
-                "google/gemma-3-12b-it",
-            ),
-        ],
-        ignore_index=True,
-    )
 
-    multik = pd.concat(
-        [
-            normalize_multik(
-                pd.read_csv(raw_paths["multik_llava"]),
-                "llava-hf/llava-v1.6-mistral-7b-hf",
-            ),
-            normalize_multik(
-                pd.read_csv(raw_paths["multik_gemma"]),
-                "google/gemma-3-12b-it",
-            ),
-        ],
-        ignore_index=True,
-    )
+def save_multik_results(
+    raw_df: pd.DataFrame,
+    model_name: str,
+    output_dir: Path = RESULTS_DIR,
+) -> Path:
+    normalized = normalize_multik(raw_df, model_name)
+    return _upsert_by_model(normalized, output_dir / "appendix_multik.csv")
 
-    mlp = pd.concat(
-        [
-            normalize_intervention(
-                pd.read_csv(raw_paths["mlp_llava"]),
-                "llava-hf/llava-v1.6-mistral-7b-hf",
-            ),
-            normalize_intervention(
-                pd.read_csv(raw_paths["mlp_gemma"]),
-                "google/gemma-3-12b-it",
-            ),
-        ],
-        ignore_index=True,
-    )
 
-    figure4_intervention = intervention[intervention["lambda"].between(-3, 3)].copy()
+def save_mlp_results(
+    raw_df: pd.DataFrame,
+    model_name: str,
+    output_dir: Path = RESULTS_DIR,
+) -> Path:
+    normalized = normalize_intervention(raw_df, model_name)
+    return _upsert_by_model(normalized, output_dir / "appendix_mlp.csv")
 
-    outputs = {
-        "figure3_heads_llava": write_table(
-            llava_heads, output_dir / "figure3_heads_llava-next.csv"
-        ),
-        "figure3_heads_gemma": write_table(
-            gemma_heads, output_dir / "figure3_heads_gemma3.csv"
-        ),
-        "figure3_attention_summary_llava": write_table(
-            llava_attention, output_dir / "figure3_attention_summary_llava-next.csv"
-        ),
-        "figure3_attention_summary_gemma": write_table(
-            gemma_attention, output_dir / "figure3_attention_summary_gemma3.csv"
-        ),
-        "figure4_intervention": write_table(
-            figure4_intervention, output_dir / "figure4_intervention.csv"
-        ),
-        "figure4_intervention_full": write_table(
-            intervention, output_dir / "figure4_intervention_full.csv"
-        ),
-        "figure5_localization": write_table(
-            localization, output_dir / "figure5_localization.csv"
-        ),
-        "appendix_multik": write_table(multik, output_dir / "appendix_multik.csv"),
-        "appendix_mlp": write_table(mlp, output_dir / "appendix_mlp.csv"),
+
+def default_table_paths(output_dir: Path = RESULTS_DIR) -> Dict[str, Path]:
+    return {
+        "figure3_heads_llava": output_dir / "figure3_heads_llava-next.csv",
+        "figure3_heads_gemma": output_dir / "figure3_heads_gemma3.csv",
+        "figure3_attention_summary_llava": output_dir
+        / "figure3_attention_summary_llava-next.csv",
+        "figure3_attention_summary_gemma": output_dir
+        / "figure3_attention_summary_gemma3.csv",
+        "figure4_intervention": output_dir / "figure4_intervention.csv",
+        "figure5_localization": output_dir / "figure5_localization.csv",
+        "appendix_multik": output_dir / "appendix_multik.csv",
+        "appendix_mlp": output_dir / "appendix_mlp.csv",
     }
-    return outputs

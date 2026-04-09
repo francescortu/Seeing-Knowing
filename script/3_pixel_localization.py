@@ -29,7 +29,7 @@ from dataclasses import dataclass  # Removed unused field, asdict
 from easyroutine.interpretability import Intervention
 from src.datastatistics import statistics_computer
 from src.experiment_manager import ExperimentManager, BaseConfig
-from src.paper_results import model_slug, normalize_localization, write_table
+from src.paper_results import save_localization_results
 
 from easyroutine.logger import logger, setup_logging
 from easyroutine.interpretability import ExtractionConfig
@@ -565,6 +565,8 @@ class ImgCfactLocalizationExperiment:
 
 
 def add_to_json(top_pixels, threshold, filename):
+    if not filename:
+        return
     # top pixels is a dict with index as key and list of top pixels as value
     # i want to save to a json with index the threshold and as a value top pixels
     # check if the file exists
@@ -768,27 +770,8 @@ def main():
         assert config.experiment_description is not None  # Added assertion
         config.experiment_description += " (Debug)"
 
-    # --- Output Directory Setup ---
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    # Create folder structure: results/2_ImgCfactLocalization/tag_name/model_timestamp
-    tag_folder = Path("results/2_ImgCfactLocalization") / config.experiment_tag
-    output_dir = tag_folder / f"{config.model_name.replace('/', '-')}_{timestamp}"
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    config_json_path = output_dir / "config.json"
-    results_csv_path = output_dir / "results.csv"
-
-    # Save config to the new location
-
     # --- Experiment Setup ---
     experiment = ImgCfactLocalizationExperiment(config)
-    experiment.output_dir = (
-        output_dir  # Assign the output directory to the experiment object
-    )
-    experiment.config_to_json(config_json_path)
-
-    logger.info(f"Configuration saved to {config_json_path}")
-    logger.info(f"Results will be saved to: {results_csv_path}")
     logger.info(f"Experiment description: {config.experiment_description}")
 
     # ... rest of the setup (model, dataloader, heads, cache) remains the same ...
@@ -814,33 +797,20 @@ def main():
 
     results_df = add_to_df(results_df, "baseline", "-", baseline_data)
     logger.info("Baseline results added to DataFrame.")
-    # Save initial baseline result to the new path
-    results_df.to_csv(results_csv_path, index=False)
-    logger.info(f"Results saved to {results_csv_path}")
-
     results_df = run_multiple_resid_ablation_with_control(
         experiment,
         cache,
         results_df,
         mode=args.mode,
-        top_pixels_filename=str(output_dir / "top_pixels.json"),
+        top_pixels_filename=None,
         saliency=saliency_cache if args.saliency else None,
-        results_csv_path=results_csv_path,
+        results_csv_path=None,
     )
     logger.info("Multiple resid ablation experiments completed.")
 
-    # Final save (can be redundant but ensures the latest state is saved)
-    results_df.to_csv(results_csv_path, index=False)
-    logger.info(f"Final results saved to {results_csv_path}")
-    write_table(
-        normalize_localization(results_df, args.model),
-        Path("results/paper_tables")
-        / f"figure5_localization_{model_slug(args.model)}.csv",
-    )
+    save_localization_results(results_df, args.model)
 
-    print(
-        f"\nExperiment run complete. Results and config saved in {experiment.output_dir}"
-    )
+    print("\nExperiment run complete. Results saved in results/.")
 
 
 if __name__ == "__main__":

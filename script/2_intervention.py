@@ -15,7 +15,7 @@ from typing import List, Tuple, Optional
 
 from src.experiment_manager import ExperimentManager
 from src.datastatistics import statistics_computer
-from src.paper_results import model_slug, normalize_intervention, write_table
+from src.paper_results import save_intervention_results
 from easyroutine.interpretability import Intervention
 from easyroutine.logger import logger, setup_logging
 
@@ -281,17 +281,6 @@ class FullExperimentRunner:
             evaluate_generation_quality=evaluate_generation_quality,
             evaluate_coco=evaluate_coco,
         )
-        ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        # Create folder structure: output_dir/tag_name/model_experiment_timestamp
-        tag_folder = self.cfg.output_dir / self.cfg.experiment_tag
-        out = tag_folder / f"{self.cfg.model_name.replace('/', '-')}_{ts}"
-        out.mkdir(parents=True, exist_ok=True)
-        csv = out / f"{self.cfg.experiment_tag}.csv"
-        cfgf = out / "config.json"
-        df.to_csv(csv, index=False)
-        with open(cfgf, "w") as f:
-            json.dump(self.cfg.__dict__, f, default=str, indent=2)
-        logger.info(f"Results saved to {csv}")
         return df
 
     # def run_generation_quality_evaluation(self) -> pd.DataFrame:
@@ -356,11 +345,7 @@ def main() -> None:
         evaluate_generation_quality=args.evaluate_generation_quality,
         evaluate_coco=args.evaluate_coco,
     )
-    write_table(
-        normalize_intervention(result_df, args.model),
-        Path("results/paper_tables")
-        / f"figure4_intervention_{model_slug(args.model)}.csv",
-    )
+    save_intervention_results(result_df, args.model)
 
 
 if __name__ == "__main__":
