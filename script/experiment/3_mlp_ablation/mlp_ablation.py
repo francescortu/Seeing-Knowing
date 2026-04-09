@@ -1,76 +1,68 @@
-import sys
-import os
-import pandas as pd
-import numpy as np
-import json
-import datetime
 import argparse
-import copy  # Added for deep copying configs
+import importlib.util
+import json
 from pathlib import Path
-from rich.progress import (
-    Progress,
-    TextColumn,
-    BarColumn,
-    TaskProgressColumn,
-    TimeRemainingColumn,
-    SpinnerColumn,
-    TimeElapsedColumn,
-)
-from rich.console import Console
-from rich.panel import Panel
-from rich.layout import Layout
-from rich.live import Live
-from typing import List, Tuple, Optional, Dict, Any
-from dataclasses import dataclass, field, asdict
-from easyroutine.console import progress
 
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../src"))
-)
-sys.path.append(os.path.join(os.path.dirname(__file__), "../../.."))
+from src.paper_results import model_slug, normalize_intervention, write_table
 
-from easyroutine.interpretability import Intervention
-from src.datastatistics import statistics_computer
-from src.experiment_manager import ExperimentManager, BaseConfig
-from easyroutine.logger import logger, setup_logging
 
-setup_logging(level="INFO")  # Set up logging for the experiment
+full_path = Path(__file__).parent.parent / "1_heads_ablation" / "2_full.py"
+spec = importlib.util.spec_from_file_location("full_experiment", str(full_path))
+full = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(full)
 
-@dataclass
-class MLPInterventionConfig(BaseConfig):
-    layers: List[int] = field(default_factory=list)
-    multiplication_values: List[int] = field(default_factory=list)
+FullExperimentConfig = full.FullExperimentConfig
+FullExperimentRunner = full.FullExperimentRunner
 
-class MLPInterventionManager(ExperimentManager):
-    def __init__(self, config: BaseConfig):
-        """
-        BaseCOnfig(
-            model_name,
-            dataset_name,
-            experiment_tag,
-            extra_metadata,
-            debug,
-            debug_sample,
-            prompt_templates
-        )
-        """
-        super().__init__(config)
-        
-        
-    def set_interventions(self, layers: List[int], multiplication_value:int):
-        pass
-    
-    def run(self):
-        """
-        Run the MLP intervention experiment.
-        """
-        # Initialize the intervention
-        for multiplication_value in self.config.multiplication_values:
-            logger.info(f"Running intervention with multiplication value: {multiplication_value}")
-            self.set_interventions(
-                layers=self.config.layers,
-                multiplication_value=multiplication_value
-            )
-            
-            #run evaluation
-            
+
+def parse_args():
+    parser = argparse.ArgumentParser("Run MLP ablation experiments")
+    parser.add_argument("--model", type=str, required=True)
+    parser.add_argument("--dataset", type=str, default=None)
+    parser.add_argument("--tag", type=str, default="v16_MLP")
+    parser.add_argument(
+        "--lambda_values",
+        "--lambda",
+        nargs="+",
+        type=float,
+        default=[-50, -25, -10, -5, -3, -2, -1, 0, 1, 2, 3, 5, 10, 25, 50],
+        help="Signed intervention strengths reported as lambda in the paper-facing outputs.",
+    )
+    parser.add_argument(
+        "--mlp-layers",
+        nargs="+",
+        type=int,
+        default=[29, 30, 31],
+        help="MLP layers to ablate.",
+    )
+    parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--debug_samples", type=int, default=None)
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    cfg = FullExperimentConfig(
+        model_name=args.model,
+        experiment_tag=args.tag,
+        gamma_values=[-value for value in args.lambda_values],
+        ablation_types=["mlp"],
+        mlp_ablation_layers=args.mlp_layers,
+    )
+    if args.dataset:
+        cfg.dataset_name = args.dataset
+    if args.debug:
+        cfg.debug = True
+    if args.debug_samples:
+        cfg.debug_samples = args.debug_samples
+
+    runner = FullExperimentRunner(cfg)
+    df = runner.run()
+    write_table(
+        normalize_intervention(df, args.model),
+        Path("results/paper_tables") / f"appendix_mlp_{model_slug(args.model)}.csv",
+    )
+
+
+if __name__ == "__main__":
+    main()

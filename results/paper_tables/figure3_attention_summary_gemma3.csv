@@ -1,0 +1,4 @@
+model,model_slug,group,attention_to_image_pct
+Gemma3,gemma3,Counterfactual,53.134765625
+Gemma3,gemma3,Factual,25.531005845
+Gemma3,gemma3,All,22.125879322697937

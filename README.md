@@ -9,6 +9,7 @@ Canonical dataset: [`francescortu/whoops-aha`](https://huggingface.co/datasets/f
 - `script/1_logitlens.py`: top-level wrapper for head identification.
 - `script/2_intervention.py`: top-level wrapper for head intervention.
 - `script/3_pixel_localization.py`: top-level wrapper for visual localization.
+- `script/prepare_paper_results.py`: rebuilds stable paper-facing result tables from the curated raw artifacts.
 - `script/experiment/`: paper experiment code, including appendix experiments used in the final draft.
 - `src/`: shared experiment and evaluation utilities.
 - `plots/`: Python plotting helpers plus a checked-in artifact plotting entrypoint.
@@ -66,6 +67,7 @@ poetry run python script/experiment/5_segmentation/1_segmentation_attention.py -
 Plot checked-in artifacts:
 
 ```bash
+poetry run python script/prepare_paper_results.py
 poetry run python plots/example_plots.py --output-dir results/paper_figures
 ```
 
@@ -85,3 +87,5 @@ The checked-in `results/` tree contains the compact paper artifacts:
 - validation summaries
 - segmentation summaries
 - POPE control results
+
+The stable, paper-facing tables used for plotting are written to `results/paper_tables/`.

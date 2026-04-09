@@ -1,0 +1,4 @@
+model,model_slug,group,attention_to_image_pct
+LLaVA-NeXT,llava-next,Counterfactual,61.38671875
+LLaVA-NeXT,llava-next,Factual,29.438476575000003
+LLaVA-NeXT,llava-next,All,22.038725020927735

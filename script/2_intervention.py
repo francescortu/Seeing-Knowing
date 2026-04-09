@@ -15,6 +15,7 @@ from typing import List, Tuple, Optional
 
 from src.experiment_manager import ExperimentManager
 from src.datastatistics import statistics_computer
+from src.paper_results import model_slug, normalize_intervention, write_table
 from easyroutine.interpretability import Intervention
 from easyroutine.logger import logger, setup_logging
 
@@ -306,8 +307,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", type=str, default=None)
     parser.add_argument("--tag", type=str, default="default")
     parser.add_argument("--k_heads", type=int, default=None)
-    parser.add_argument("--lambd", nargs="+", type=float)
-    # parser.add_argument("--lambda", dest="lambda_", nargs="+", type=float)
+    parser.add_argument(
+        "--lambda_values",
+        "--lambda",
+        "--lambd",
+        dest="lambda_values",
+        nargs="+",
+        type=float,
+        help="Signed intervention strength used in the paper plots.",
+    )
     parser.add_argument("--ablation_types", nargs="+", type=str)
     parser.add_argument("--use_paired", action="store_true")
     parser.add_argument("--control", action="store_true")
@@ -332,8 +340,8 @@ def main() -> None:
         base.dataset_name = args.dataset
     if args.k_heads:
         base.k_heads = args.k_heads
-    if args.lambd:
-        base.gamma_values = args.lambd
+    if args.lambda_values:
+        base.gamma_values = [-value for value in args.lambda_values]
     if args.ablation_types:
         base.ablation_types = args.ablation_types
     base.use_paired = args.use_paired
@@ -344,9 +352,14 @@ def main() -> None:
     if args.debug_samples:
         base.debug_samples = args.debug_samples
     runner = FullExperimentRunner(base)
-    runner.run(
+    result_df = runner.run(
         evaluate_generation_quality=args.evaluate_generation_quality,
         evaluate_coco=args.evaluate_coco,
+    )
+    write_table(
+        normalize_intervention(result_df, args.model),
+        Path("results/paper_tables")
+        / f"figure4_intervention_{model_slug(args.model)}.csv",
     )
 
 

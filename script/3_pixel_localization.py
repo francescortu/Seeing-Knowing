@@ -29,6 +29,7 @@ from dataclasses import dataclass  # Removed unused field, asdict
 from easyroutine.interpretability import Intervention
 from src.datastatistics import statistics_computer
 from src.experiment_manager import ExperimentManager, BaseConfig
+from src.paper_results import model_slug, normalize_localization, write_table
 
 from easyroutine.logger import logger, setup_logging
 from easyroutine.interpretability import ExtractionConfig
@@ -831,6 +832,11 @@ def main():
     # Final save (can be redundant but ensures the latest state is saved)
     results_df.to_csv(results_csv_path, index=False)
     logger.info(f"Final results saved to {results_csv_path}")
+    write_table(
+        normalize_localization(results_df, args.model),
+        Path("results/paper_tables")
+        / f"figure5_localization_{model_slug(args.model)}.csv",
+    )
 
     print(
         f"\nExperiment run complete. Results and config saved in {experiment.output_dir}"

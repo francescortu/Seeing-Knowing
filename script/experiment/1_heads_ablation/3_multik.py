@@ -16,6 +16,7 @@ import pandas as pd
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../src"))
 )
+from src.paper_results import model_slug, normalize_multik, write_table
 
 import importlib.util
 
@@ -150,6 +151,11 @@ def main():
         master_df = pd.concat(results_list, ignore_index=True)
         master_csv = batch_dir / "multi_k_results.csv"
         master_df.to_csv(master_csv, index=False)
+        write_table(
+            normalize_multik(master_df, args.model),
+            Path("results/paper_tables")
+            / f"appendix_multik_{model_slug(args.model)}.csv",
+        )
         print(f"Combined results saved to {master_csv}")
     else:
         print("No results generated.")

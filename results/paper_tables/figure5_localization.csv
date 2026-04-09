@@ -1,0 +1,97 @@
+model,model_slug,method,pixels_removed_pct,factual_accuracy_pct
+LLaVA-NeXT,llava-next,Through Attn Heads,0.0,22.811059907834093
+LLaVA-NeXT,llava-next,Through Attn Heads,1.0,29.493087557603687
+LLaVA-NeXT,llava-next,Through Attn Heads,2.0,33.02540415704388
+LLaVA-NeXT,llava-next,Through Attn Heads,3.0,38.10623556581986
+LLaVA-NeXT,llava-next,Through Attn Heads,5.0,46.63573085846868
+LLaVA-NeXT,llava-next,Through Attn Heads,7.000000000000001,52.44755244755245
+LLaVA-NeXT,llava-next,Through Attn Heads,10.0,59.57943925233645
+LLaVA-NeXT,llava-next,Through Attn Heads,20.0,69.90521327014218
+LLaVA-NeXT,llava-next,Through Attn Heads,30.0,72.16981132075472
+LLaVA-NeXT,llava-next,Through Attn Heads,40.0,75.65011820330969
+LLaVA-NeXT,llava-next,Through Attn Heads,50.0,74.93857493857493
+LLaVA-NeXT,llava-next,Through Attn Heads,60.0,77.72151898734178
+LLaVA-NeXT,llava-next,Through Attn Heads,70.0,77.11171662125341
+LLaVA-NeXT,llava-next,Through Attn Heads,80.0,76.1755485893417
+LLaVA-NeXT,llava-next,Through Attn Heads,90.0,71.17437722419928
+LLaVA-NeXT,llava-next,Through Attn Heads,100.0,69.40298507462687
+LLaVA-NeXT,llava-next,Random,0.0,22.811059907834093
+LLaVA-NeXT,llava-next,Random,1.0,23.271889400921665
+LLaVA-NeXT,llava-next,Random,2.0,22.811059907834093
+LLaVA-NeXT,llava-next,Random,3.0,22.58064516129032
+LLaVA-NeXT,llava-next,Random,5.0,23.04147465437788
+LLaVA-NeXT,llava-next,Random,7.000000000000001,22.811059907834093
+LLaVA-NeXT,llava-next,Random,10.0,23.502304147465438
+LLaVA-NeXT,llava-next,Random,20.0,23.908045977011497
+LLaVA-NeXT,llava-next,Random,30.0,25.747126436781613
+LLaVA-NeXT,llava-next,Random,40.0,25.404157043879906
+LLaVA-NeXT,llava-next,Random,50.0,24.018475750577366
+LLaVA-NeXT,llava-next,Random,60.0,26.218097447795813
+LLaVA-NeXT,llava-next,Random,70.0,27.738927738927742
+LLaVA-NeXT,llava-next,Random,80.0,30.930232558139537
+LLaVA-NeXT,llava-next,Random,90.0,35.74879227053141
+LLaVA-NeXT,llava-next,Random,100.0,69.40298507462687
+LLaVA-NeXT,llava-next,Through Gradients,0.0,22.811059907834093
+LLaVA-NeXT,llava-next,Through Gradients,1.0,24.884792626728114
+LLaVA-NeXT,llava-next,Through Gradients,2.0,26.388888888888886
+LLaVA-NeXT,llava-next,Through Gradients,3.0,28.637413394919164
+LLaVA-NeXT,llava-next,Through Gradients,5.0,31.48148148148148
+LLaVA-NeXT,llava-next,Through Gradients,7.000000000000001,32.175925925925924
+LLaVA-NeXT,llava-next,Through Gradients,10.0,34.722222222222214
+LLaVA-NeXT,llava-next,Through Gradients,20.0,43.48837209302325
+LLaVA-NeXT,llava-next,Through Gradients,30.0,48.951048951048946
+LLaVA-NeXT,llava-next,Through Gradients,40.0,53.521126760563384
+LLaVA-NeXT,llava-next,Through Gradients,50.0,54.97630331753555
+LLaVA-NeXT,llava-next,Through Gradients,60.0,55.20581113801452
+LLaVA-NeXT,llava-next,Through Gradients,70.0,57.38916256157635
+LLaVA-NeXT,llava-next,Through Gradients,80.0,58.51063829787234
+LLaVA-NeXT,llava-next,Through Gradients,90.0,57.53846153846154
+LLaVA-NeXT,llava-next,Through Gradients,100.0,69.40298507462687
+Gemma3,gemma3,Through Attn Heads,0.0,18.225419664268586
+Gemma3,gemma3,Through Attn Heads,1.0,19.036144578313255
+Gemma3,gemma3,Through Attn Heads,2.0,19.90291262135922
+Gemma3,gemma3,Through Attn Heads,3.0,19.565217391304344
+Gemma3,gemma3,Through Attn Heads,5.0,19.708029197080293
+Gemma3,gemma3,Through Attn Heads,7.000000000000001,21.844660194174764
+Gemma3,gemma3,Through Attn Heads,10.0,24.81572481572482
+Gemma3,gemma3,Through Attn Heads,20.0,30.478589420654913
+Gemma3,gemma3,Through Attn Heads,30.0,35.08771929824562
+Gemma3,gemma3,Through Attn Heads,40.0,43.47826086956522
+Gemma3,gemma3,Through Attn Heads,50.0,50.25641025641025
+Gemma3,gemma3,Through Attn Heads,60.0,55.52699228791774
+Gemma3,gemma3,Through Attn Heads,70.0,60.25974025974025
+Gemma3,gemma3,Through Attn Heads,80.0,72.37851662404091
+Gemma3,gemma3,Through Attn Heads,90.0,81.26582278481013
+Gemma3,gemma3,Through Attn Heads,100.0,93.93203883495146
+Gemma3,gemma3,Random,0.0,18.225419664268586
+Gemma3,gemma3,Random,1.0,18.07228915662651
+Gemma3,gemma3,Random,2.0,18.509615384615387
+Gemma3,gemma3,Random,3.0,18.401937046004846
+Gemma3,gemma3,Random,5.0,18.115942028985515
+Gemma3,gemma3,Random,7.000000000000001,18.64406779661016
+Gemma3,gemma3,Random,10.0,18.115942028985515
+Gemma3,gemma3,Random,20.0,18.8861985472155
+Gemma3,gemma3,Random,30.0,19.128329297820827
+Gemma3,gemma3,Random,40.0,20.48192771084338
+Gemma3,gemma3,Random,50.0,20.0
+Gemma3,gemma3,Random,60.0,20.772946859903385
+Gemma3,gemma3,Random,70.0,21.654501216545015
+Gemma3,gemma3,Random,80.0,27.228915662650593
+Gemma3,gemma3,Random,90.0,34.72906403940887
+Gemma3,gemma3,Random,100.0,93.93203883495146
+Gemma3,gemma3,Through Gradients,0.0,18.225419664268586
+Gemma3,gemma3,Through Gradients,1.0,18.115942028985515
+Gemma3,gemma3,Through Gradients,2.0,18.269230769230774
+Gemma3,gemma3,Through Gradients,3.0,20.240963855421683
+Gemma3,gemma3,Through Gradients,5.0,20.143884892086334
+Gemma3,gemma3,Through Gradients,7.000000000000001,19.565217391304344
+Gemma3,gemma3,Through Gradients,10.0,20.0
+Gemma3,gemma3,Through Gradients,20.0,21.73913043478261
+Gemma3,gemma3,Through Gradients,30.0,22.81553398058253
+Gemma3,gemma3,Through Gradients,40.0,24.514563106796118
+Gemma3,gemma3,Through Gradients,50.0,24.878048780487802
+Gemma3,gemma3,Through Gradients,60.0,29.06403940886699
+Gemma3,gemma3,Through Gradients,70.0,32.506203473945405
+Gemma3,gemma3,Through Gradients,80.0,38.69346733668342
+Gemma3,gemma3,Through Gradients,90.0,51.51515151515152
+Gemma3,gemma3,Through Gradients,100.0,93.93203883495146

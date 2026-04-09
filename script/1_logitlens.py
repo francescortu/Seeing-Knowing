@@ -15,6 +15,7 @@ import json
 from argparse import ArgumentParser
 
 from src.experiment_manager import ExperimentManager, BaseConfig, DebugConfig
+from src.paper_results import model_slug, normalize_head_selection, write_table
 
 OUTPUT_DIR = Path("results/0_heads_selection")
 
@@ -183,6 +184,12 @@ def main():
     stats = {k: str(v) for k, v in stats.items()}
     with open(output_dir / "stats.json", "w") as f:
         json.dump(stats, f, indent=4)
+
+    paper_table = normalize_head_selection(df, config.model_name)
+    write_table(
+        paper_table,
+        Path("results/paper_tables") / f"figure3_heads_{model_slug(config.model_name)}.csv",
+    )
 
 
 if __name__ == "__main__":
