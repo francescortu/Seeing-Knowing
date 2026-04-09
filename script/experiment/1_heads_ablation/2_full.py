@@ -1,8 +1,6 @@
 import sys
 import os
 import argparse
-import json
-import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -48,7 +46,6 @@ class FullExperimentConfig:
     control: bool = False
     debug: bool = False
     debug_samples: int = 10
-    output_dir: Path = Path("results/1_heads_ablation")
 
 
 class FullExperimentRunner:

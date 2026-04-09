@@ -25,7 +25,7 @@ The validation system evaluates both **factual** and **counterfactual** token co
 
 1. **Install dependencies** (if not already done):
    ```bash
-   cd /u/dssc/francescortu/VisualComp
+   cd /path/to/Seeing-Knowing
    poetry install
    ```
 
@@ -54,7 +54,7 @@ The LLM-as-a-Judge validation system is now fully functional and correctly:
 First, verify that image functionality works:
 
 ```bash
-cd /u/dssc/francescortu/VisualComp/script/experiment/4_data_validation
+cd /path/to/Seeing-Knowing/script/experiment/4_data_validation
 poetry run python test_litellm_image.py
 ```
 

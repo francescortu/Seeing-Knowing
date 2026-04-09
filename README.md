@@ -12,7 +12,7 @@ Canonical dataset: [`francescortu/whoops-aha`](https://huggingface.co/datasets/f
 - `script/experiment/`: paper experiment code, including appendix experiments used in the final draft.
 - `src/`: shared experiment and evaluation utilities.
 - `plots/`: Python plotting helpers plus a checked-in artifact plotting entrypoint.
-- `results/`: compact paper artifacts and summaries.
+- `results/`: canonical result tables used by the plotting scripts.
 
 Heavy intermediate localization artifacts are intentionally not tracked in git.
 
@@ -75,15 +75,12 @@ The default and canonical dataset source in the experiment code is the Hugging F
 
 Local exported dataset folders from paper submission preparation are treated as derived artifacts, not as the source of truth. In particular, older local ARR exports may contain recompressed image files and should not be used as the canonical reference for reproducing the main results.
 
-The checked-in `results/` tree contains the compact result artifacts:
+The checked-in `results/` tree contains the canonical result tables:
 
 - selected heads
 - paired intervention summaries
 - multi-`k` sweeps
 - MLP ablation summaries
 - localization summary CSVs
-- validation summaries
-- segmentation summaries
-- POPE control results
 
-The experiment scripts write the canonical result tables directly into `results/`.
+The public workflow does not keep timestamped experiment dump folders in git. The experiment scripts write the canonical result tables directly into `results/`.

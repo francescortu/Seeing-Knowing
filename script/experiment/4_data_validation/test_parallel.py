@@ -5,6 +5,7 @@ Test script for parallel LLM judge validation
 
 import subprocess
 import sys
+from pathlib import Path
 
 
 def test_parallel_validation():
@@ -39,7 +40,7 @@ def test_parallel_validation():
             cmd,
             capture_output=True,
             text=True,
-            cwd="/u/dssc/francescortu/VisualComp/script/experiment/4_data_validation",
+            cwd=Path(__file__).resolve().parent,
         )
 
         print("STDOUT:")

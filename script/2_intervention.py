@@ -4,8 +4,6 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import argparse
-import json
-import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -69,7 +67,6 @@ class FullExperimentConfig:
     control: bool = False
     debug: bool = False
     debug_samples: int = 10
-    output_dir: Path = Path("results/1_heads_ablation")
 
 
 class FullExperimentRunner:
