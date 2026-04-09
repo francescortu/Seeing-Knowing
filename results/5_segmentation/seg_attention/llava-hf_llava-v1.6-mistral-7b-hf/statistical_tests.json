@@ -1,0 +1,48 @@
+{
+  "cfact_vs_random_attention": {
+    "pct_on_object": {
+      "statistic": 185.0,
+      "p_value": 1.9073486328125e-05,
+      "cfact_mean": 48.74329721300226,
+      "random_mean": 36.01132813252901,
+      "significant": true
+    },
+    "concentration_ratio": {
+      "statistic": 185.0,
+      "p_value": 1.9073486328125e-05,
+      "cfact_mean": 2.754033371021873,
+      "random_mean": 1.3650018635549044,
+      "significant": true
+    },
+    "avg_ratio": {
+      "statistic": 186.0,
+      "p_value": 1.33514404296875e-05,
+      "cfact_mean": 4.07301652902051,
+      "random_mean": 1.4367823632139909,
+      "significant": true
+    }
+  },
+  "attention_vs_gradient": {
+    "pct_on_object": {
+      "statistic": 35.0,
+      "p_value": 0.014068603515625,
+      "attention_mean": 48.74329721300226,
+      "gradient_mean": 42.2964499373185,
+      "significant": true
+    },
+    "concentration_ratio": {
+      "statistic": 38.0,
+      "p_value": 0.020412445068359375,
+      "attention_mean": 2.754033371021873,
+      "gradient_mean": 2.034782218305688,
+      "significant": true
+    },
+    "avg_ratio": {
+      "statistic": 29.0,
+      "p_value": 0.0061798095703125,
+      "attention_mean": 4.07301652902051,
+      "gradient_mean": 2.435584692578567,
+      "significant": true
+    }
+  }
+}

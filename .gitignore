@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+.env
+.vscode/
+logs/
+tmp/
+slurm_log/
+
+# Local data exports are optional and can be large.
+data/
+
+# Raw localization maps are intentionally excluded from the public repo.
+results/2_ImgCfactLocalization/**/top_pixels.json
+
+# Generated plot outputs
+results/paper_figures/

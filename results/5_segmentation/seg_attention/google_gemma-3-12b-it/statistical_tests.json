@@ -1,0 +1,48 @@
+{
+  "cfact_vs_random_attention": {
+    "pct_on_object": {
+      "statistic": 188.0,
+      "p_value": 0.0005083084106445312,
+      "cfact_mean": 46.00359737128019,
+      "random_mean": 26.704595828056334,
+      "significant": true
+    },
+    "concentration_ratio": {
+      "statistic": 188.0,
+      "p_value": 0.0005083084106445312,
+      "cfact_mean": 2.6927853025496007,
+      "random_mean": 1.1412769943475722,
+      "significant": true
+    },
+    "avg_ratio": {
+      "statistic": 192.0,
+      "p_value": 0.00024127960205078125,
+      "cfact_mean": 4.586348827928305,
+      "random_mean": 1.214070437848568,
+      "significant": true
+    }
+  },
+  "attention_vs_gradient": {
+    "pct_on_object": {
+      "statistic": 29.0,
+      "p_value": 0.0031528472900390625,
+      "attention_mean": 46.00359737128019,
+      "gradient_mean": 34.510757595300674,
+      "significant": true
+    },
+    "concentration_ratio": {
+      "statistic": 32.0,
+      "p_value": 0.00485992431640625,
+      "attention_mean": 2.6927853025496007,
+      "gradient_mean": 1.3911925375461578,
+      "significant": true
+    },
+    "avg_ratio": {
+      "statistic": 22.0,
+      "p_value": 0.0010166168212890625,
+      "attention_mean": 4.586348827928305,
+      "gradient_mean": 1.6270126029849052,
+      "significant": true
+    }
+  }
+}

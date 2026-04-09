@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 import os
 import logging
 import datetime
+import ast
 from pathlib import Path
 import pandas as pd
 from typing import List, Tuple, Dict, Optional, Any, Union
@@ -124,10 +125,67 @@ class ExperimentManager:
         self.dataset = (
             self.dataset["train"] if "train" in self.dataset else self.dataset
         )
+
+        # Handle Visual-Counterfact dataset transformation
+        if (
+            isinstance(dataset_name_or_object, str)
+            and "Visual-Counterfact" in dataset_name_or_object
+        ):
+            self.dataset = self._transform_visual_counterfact_dataset(self.dataset)
+
         return self
 
+    def _transform_visual_counterfact_dataset(self, dataset):
+        """Transform Visual-Counterfact dataset to expected format
+
+        Visual-Counterfact has splits 'color' and 'size', we'll use 'color' split.
+        Fields mapping:
+        - counterfact_image -> image
+        - "The color of the {object} is" -> text
+        - correct_answer (list) -> factual_tokens
+        - incorrect_answer (single string) -> counterfactual_tokens (as list)
+        """
+
+        # Use 'color' split if dataset is a DatasetDict
+        if isinstance(dataset, DatasetDict):
+            self.logger.info("Visual-Counterfact dataset detected, using 'color' split")
+            dataset = dataset["color"]
+
+        def transform_item(item):
+            # Parse correct_answer if it's a string representation of a list
+            correct_answer = item["correct_answer"]
+            if isinstance(correct_answer, str):
+                try:
+                    correct_answer = ast.literal_eval(correct_answer)
+                except:
+                    correct_answer = [correct_answer]
+
+            # Ensure incorrect_answer is a list
+            incorrect_answer = item["incorrect_answer"]
+            if not isinstance(incorrect_answer, list):
+                incorrect_answer = [incorrect_answer]
+
+            return {
+                "image": item["counterfact_image"],
+                "text": f"The color of the {item['object']} is",
+                "factual_tokens": correct_answer,
+                "counterfactual_tokens": incorrect_answer,
+                "image_id": f"visual_counterfact_{item['object'].replace(' ', '_')}",
+                "object": item["object"],  # Keep original object for reference
+            }
+
+        self.logger.info(
+            f"Transforming Visual-Counterfact dataset ({len(dataset)} items)"
+        )
+        transformed_dataset = dataset.map(
+            transform_item, remove_columns=dataset.column_names
+        )
+        self.logger.info("Dataset transformation completed")
+
+        return transformed_dataset
+
     def load_dataset_from_local(
-        self, dataset_path: Path = Path("data/emnlp_submission/dataset")
+        self, dataset_path: Path = Path("data/arrOCT_submission/dataset")
     ):
         csv_path = dataset_path / "whoops-aha!.csv"
         images_path = dataset_path / "images"
@@ -157,15 +215,25 @@ class ExperimentManager:
 
                 img = Image.open(image_file_path)
 
+                factual_tokens = row.get("factual_tokens")
+                counterfactual_tokens = row.get("counterfactual_tokens")
+                image_id = row.get("image_id", image_filename)
+
                 dataset_item = {
                     "image": img,
                     "text": row["text"],  # Assuming 'theme' is the text column
-                    "image_id": image_filename,
+                    "image_id": image_id,
                     # Explicitly get factual/counterfactual tokens, as they might be used later.
                     # Default to None if not present in the CSV.
-                    "factual_tokens": ast.literal_eval(row.get("factual_tokens")),
-                    "counterfactual_tokens": ast.literal_eval(
-                        row.get("counterfactual_tokens")
+                    "factual_tokens": (
+                        ast.literal_eval(factual_tokens)
+                        if isinstance(factual_tokens, str)
+                        else factual_tokens
+                    ),
+                    "counterfactual_tokens": (
+                        ast.literal_eval(counterfactual_tokens)
+                        if isinstance(counterfactual_tokens, str)
+                        else counterfactual_tokens
                     ),
                 }
                 # Add all other columns from the CSV to the dataset_item,
@@ -351,7 +419,7 @@ class ExperimentManager:
             self.token_pair, self.dataloader, self.baseline = self.filter_dataloader()
 
         # baseline_deprecated = self.deprecated_run_baseline_stats()
-        # assert baseline_deprecated["Fact Acc"] == self.baseline["Fact Acc"]
+        # assert baseline_deprecated["Image Cfact>Fact"] == self.baseline["Image Cfact>Fact"]
 
     def compute_token_pair(self):
         """Compute the token pairs for counterfactual and factual tokens"""
@@ -442,7 +510,7 @@ class ExperimentManager:
             # return_essential_data=True,
         )
         self.logger.info(
-            f"New baseline computed after filtering dataloader: {self.baseline['Fact Acc']} -> {new_baseline['Fact Acc']}"
+            f"New baseline computed after filtering dataloader: {self.baseline['Image Cfact>Fact']} -> {new_baseline['Image Cfact>Fact']}"
         )
         return token_pair, dataloader, new_baseline
 
@@ -682,7 +750,11 @@ class ExperimentManager:
         generated_tokens = []
         generation_instruction = "Describe the image:"
         generation_dataloader = []
-        for i, item in tqdm(enumerate(self.dataloader), desc="Generating logits", total=len(self.dataloader)):
+        for i, item in tqdm(
+            enumerate(self.dataloader),
+            desc="Generating logits",
+            total=len(self.dataloader),
+        ):
             generation_text = self.config.prompt_templates[
                 self.config.model_name + "-instruction"
             ].format(text=generation_instruction)
@@ -728,8 +800,6 @@ class ExperimentManager:
             else:
                 new_logits.append(l)
                 new_tokens.append(t)
-                
-
 
         # return torch.stack(padded_logits), torch.stack(padded_tokens)
         return torch.stack(new_logits), torch.stack(new_tokens), removed_elements
@@ -753,8 +823,12 @@ class ExperimentManager:
         The evaluate_generation_quality is a method to measure the KL divergence between the clean and intervened model outputs during generation. The model is tasked with a .generatio() task with a text like "Describe the image" and the model is expected to generate a description of the image.
         """
         self.model.use_full_model()
-        base_logit, base_generated_tokens,base_removed_elements = base_generation_output
-        intervened_logit, intervened_generated_tokens, intervened_removed_elements = self.return_generation_logits()
+        base_logit, base_generated_tokens, base_removed_elements = (
+            base_generation_output
+        )
+        intervened_logit, intervened_generated_tokens, intervened_removed_elements = (
+            self.return_generation_logits()
+        )
 
         if len(base_removed_elements) > 0:
             raise ValueError(
@@ -775,12 +849,11 @@ class ExperimentManager:
             base_generated_tokens = torch.stack(
                 [
                     base_generated_tokens[i]
-                    for i in range(len(base_generated_tokens))      
+                    for i in range(len(base_generated_tokens))
                     if i not in intervened_removed_elements
                 ]
             )
-            
-        
+
         # sample some intervened tokens
         sample_intervened_tokens = intervened_generated_tokens[:10, :]
         # de-tokenize

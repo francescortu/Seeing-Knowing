@@ -1,71 +1,93 @@
+# Seeing-Knowing
 
+Official repository for the paper _When Seeing Overrides Knowing: Disentangling Knowledge Conflict in Vision-Language Models_.
 
+The original research codebase used during development was larger and included exploratory notebooks, rebuttal work, and local dataset exports. This repository is the paper-facing version: it keeps the code paths, scripts, and compact artifacts needed to understand and reproduce the experiments reported in the paper and appendix.
 
-# When Seeing Overrides Knowing: Disentangling Knowledge Conflict in Vision-Language Models
-**Dataset: [🤗 WHOOPS-AHA!](https://huggingface.co/datasets/francescortu/whoops-aha)**
+Canonical dataset: [`francescortu/whoops-aha`](https://huggingface.co/datasets/francescortu/whoops-aha)
 
+## What Is Here
 
-This repository contains the code and scripts for running experiments on the paper *"When Seeing Overrides Knowing: Disentangling Knowledge Conflict in Vision-Language Models"*. 
+- `script/1_logitlens.py`: top-level wrapper for head identification.
+- `script/2_intervention.py`: top-level wrapper for head intervention.
+- `script/3_pixel_localization.py`: top-level wrapper for visual localization.
+- `script/experiment/`: paper experiment code, including appendix experiments used in the final draft.
+- `src/`: shared experiment and evaluation utilities.
+- `plots/`: Python plotting helpers plus a checked-in artifact plotting entrypoint.
+- `results/`: compact paper artifacts and summaries.
 
-### Prerequisites
+Heavy intermediate localization artifacts are intentionally not tracked in git.
 
-Ensure you have the following installed:
+## Installation
 
-- **Python**: Version `3.8+`
-- **Poetry**: For dependency and virtual environment management (version >`1.8`)
-- **Git**: For cloning repositories and handling submodules
+Requirements:
 
-### Install
+- Python `>=3.10,<3.13`
+- Poetry
+- access to the models used in the paper
+
+Install:
+
 ```bash
 poetry install
 ```
 
+## Main Commands
 
-## Run Experiments
+Use one of:
+
+- `llava-hf/llava-v1.6-mistral-7b-hf`
+- `google/gemma-3-12b-it`
+
+Head identification:
+
 ```bash
-    - <model_name>: either `llava-hf/llava-v1.6-mistral-7b-hf` or `google/gemma-3-12b-it`
+poetry run python script/1_logitlens.py --model llava-hf/llava-v1.6-mistral-7b-hf --tag v16_arXiv
 ```
 
-### Identification of components and heads
+Paired head intervention:
+
 ```bash
-poetry run python script/experiment/0_logit_lens/1_logitlens.py /
-                            --model <model_name>
-
+poetry run python script/2_intervention.py --model llava-hf/llava-v1.6-mistral-7b-hf --tag v16_arXiv --use_paired
 ```
 
-### Intervention
-```bash 
-poetry run python script/2_intervention.py --model <model_name> --ablation_type last-row-paired  
-```
+Pixel localization:
 
-### Pixel Localization
 ```bash
-poetry run python script/3_pixel_localization.py --experiments baseline multiple_resid_ablation_with_control  --model <model_name>
+poetry run python script/3_pixel_localization.py --model llava-hf/llava-v1.6-mistral-7b-hf --tag v16_arXiv --experiments baseline multiple_resid_ablation_with_control
 ```
 
-### Run All Main Experiments and Produce Plots
+Appendix experiments:
 
-To run the main experiments and automatically produce the corresponding plots, use the following commands:
-
-#### Identification of components and heads
 ```bash
-poetry run python script/1_logitlens.py --model <model_name>
+poetry run python script/experiment/1_heads_ablation/3_multik.py --model google/gemma-3-12b-it --tag v16_arXiv
+poetry run python script/experiment/3_mlp_ablation/mlp_ablation.py --model google/gemma-3-12b-it --tag v16_MLP
+poetry run python script/experiment/5_segmentation/1_segmentation_attention.py --model llava-hf/llava-v1.6-mistral-7b-hf
 ```
 
-#### Intervention
+Plot checked-in artifacts:
+
 ```bash
-poetry run python script/2_intervention.py --model <model_name> --not_rebalance_weight --ablation_type last-row-paired
+poetry run python plots/example_plots.py --output-dir results/paper_figures
 ```
 
-#### Pixel Localization
-```bash
-poetry run python script/3_pixel_localization.py --experiments baseline multiple_resid_ablation_with_control --model <model_name>
-```
+## Dataset Notes
 
-#### Plotting Results
-After running the experiments, generate all main plots with:
-```bash
-poetry run python plots/example_plots.py
-```
+The default and canonical dataset source in the experiment code is the Hugging Face dataset `francescortu/whoops-aha`.
 
-Replace `<model_name>` with either `llava-hf/llava-v1.6-mistral-7b-hf` or `google/gemma-3-12b-it` as appropriate.
+Local exported dataset folders from paper submission preparation are treated as derived artifacts, not as the source of truth. In particular, older local ARR exports may contain recompressed image files and should not be used as the canonical reference for reproducing the main results.
+
+## Reproducibility
+
+The checked-in `results/` tree contains the compact artifacts used for the paper:
+
+- selected heads
+- paired intervention summaries
+- multi-`k` sweeps
+- MLP ablation summaries
+- localization summary CSVs
+- validation summaries
+- segmentation summaries
+- POPE control results
+
+See [REPRODUCIBILITY.md](/orfeo/cephfs/home/dssc/francescortu/Seeing-Knowing/REPRODUCIBILITY.md) for the rerun procedure and [ARTIFACTS.md](/orfeo/cephfs/home/dssc/francescortu/Seeing-Knowing/ARTIFACTS.md) for the artifact map.

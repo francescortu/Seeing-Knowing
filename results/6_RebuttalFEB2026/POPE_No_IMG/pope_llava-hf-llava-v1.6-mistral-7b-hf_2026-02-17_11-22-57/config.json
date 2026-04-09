@@ -1,0 +1,24 @@
+{
+  "model_name": "llava-hf/llava-v1.6-mistral-7b-hf",
+  "experiment_tag": "POPE_No_IMG",
+  "dataset_name": "francescortu/whoops-aha",
+  "scienceqa_dataset_name": "derek-thomas/ScienceQA",
+  "pope_dataset_name": "lmms-lab/POPE",
+  "eval_dataset": "pope",
+  "k_heads": 20,
+  "gamma_values": [
+    -2.0
+  ],
+  "lambda_val": 2.0,
+  "ablation_types": [
+    "last-row"
+  ],
+  "rebalanced_weight": true,
+  "control": false,
+  "debug": false,
+  "debug_samples": 10,
+  "use_paired": true,
+  "run_text_only_baseline": true,
+  "text_only_eval_only": true,
+  "output_dir": "results/6_RebuttalFEB2026"
+}

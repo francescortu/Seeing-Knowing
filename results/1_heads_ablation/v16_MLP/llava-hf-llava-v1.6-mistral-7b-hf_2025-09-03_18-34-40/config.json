@@ -1,0 +1,39 @@
+{
+  "model_name": "llava-hf/llava-v1.6-mistral-7b-hf",
+  "experiment_tag": "v16_MLP",
+  "dataset_name": "francescortu/whoops-aha",
+  "k_heads": 20,
+  "gamma_values": [
+    -10,
+    -5,
+    -3,
+    -2.5,
+    -2,
+    -1.5,
+    -1,
+    -0.5,
+    0,
+    0.5,
+    1,
+    1.5,
+    2,
+    2.5,
+    3,
+    5,
+    10
+  ],
+  "mlp_ablation_layers": [
+    29,
+    30,
+    31
+  ],
+  "ablation_types": [
+    "mlp"
+  ],
+  "use_paired": false,
+  "rebalanced_weight": true,
+  "control": false,
+  "debug": false,
+  "debug_samples": 10,
+  "output_dir": "results/1_heads_ablation"
+}

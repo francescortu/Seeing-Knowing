@@ -1,0 +1,95 @@
+[
+  {
+    "index": 0,
+    "image_id": "93aba1b36f51fad62433d195ebf5cc555e25193f638c9575dff94712b3125984",
+    "text": "The boy is holding a",
+    "factual_tokens": [
+      "ball",
+      "book",
+      "balloon",
+      "toy",
+      "pencil"
+    ],
+    "counterfactual_tokens": [
+      "lips",
+      "cigar",
+      "smoke",
+      "mouthpiece",
+      "cigarette",
+      "breath",
+      "puff",
+      "drag",
+      "roll",
+      "pipe"
+    ],
+    "factual_validation": {
+      "appropriate_meaningful": "Yes",
+      "grammatically_correct": "Yes",
+      "knowledge_reflection_score": 5,
+      "raw_response": "{\n    \"appropriate_meaningful\": \"Yes\",\n    \"grammatically_correct\": \"Yes\",\n    \"knowledge_reflection_score\": 5,\n    \"reasoning\": \"All completions fit naturally after 'The boy is holding a', yielding grammatical and plausible sentences. Each object (ball, book, balloon, toy, pencil) is a common thing a boy might hold, matching general common knowledge.\"\n}"
+    },
+    "counterfactual_validation": {
+      "appropriate_meaningful": "Some do not make sense",
+      "grammatically_correct": "No",
+      "knowledge_reflection_score": 4,
+      "raw_response": "{\n    \"appropriate_meaningful\": \"Some do not make sense\",\n    \"grammatically_correct\": \"No\",\n    \"knowledge_reflection_score\": 4,\n    \"reasoning\": \"Only 'cigar', 'cigarette' (and possibly 'pipe') yield natural, meaningful sentences for the image of a boy smoking. Items like 'lips', 'smoke', 'breath', 'puff', 'drag', and 'roll' are ungrammatical or semantically odd in this context. Because at least one completion (e.g., 'a lips') is grammatically incorrect, overall grammar is not consistently correct. The good completions do reflect the unusual element (a child smoking), hence a high but not perfect score.\"\n}"
+    }
+  },
+  {
+    "index": 1,
+    "image_id": "07c94c8cfcbdd9880b3c346def434d9d7616668223ea8fcc8ce5dc8c94fe5fd6",
+    "text": "The sound the fox is making is",
+    "factual_tokens": [
+      "yipping",
+      "barking",
+      "yelping",
+      "screaming"
+    ],
+    "counterfactual_tokens": [
+      "howl",
+      "roar",
+      "howling"
+    ],
+    "factual_validation": {
+      "appropriate_meaningful": "Yes",
+      "grammatically_correct": "Yes",
+      "knowledge_reflection_score": 5,
+      "raw_response": "{\n    \"appropriate_meaningful\": \"Yes\",\n    \"grammatically_correct\": \"Yes\",\n    \"knowledge_reflection_score\": 5,\n    \"reasoning\": \"All completions are plausible fox vocalizations (foxes can yip, bark, yelp, and scream). Using gerunds after 'is' is grammatically acceptable here, so the sentences read naturally and align with common knowledge.\"\n}"
+    },
+    "counterfactual_validation": {
+      "appropriate_meaningful": "Some do not make sense",
+      "grammatically_correct": "No",
+      "knowledge_reflection_score": 3,
+      "raw_response": "{\n    \"appropriate_meaningful\": \"Some do not make sense\",\n    \"grammatically_correct\": \"No\",\n    \"knowledge_reflection_score\": 3,\n    \"reasoning\": \"\u2018howling\u2019 fits and matches the image of a fox howling. \u2018howl\u2019 and \u2018roar\u2019 are ungrammatical without an article, and \u2018roar\u2019 is also semantically off for a fox. Because some completions are ungrammatical, overall grammar is not correct.\"\n}"
+    }
+  },
+  {
+    "index": 2,
+    "image_id": "a76cfa293b2029a0807a0748b2f26003ef587f76ca8d89f7c61d2d756dc393e5",
+    "text": "The surgeon with careful precision cuts the",
+    "factual_tokens": [
+      "tissue",
+      "stitches",
+      "incision",
+      "artery",
+      "membrane"
+    ],
+    "counterfactual_tokens": [
+      "fruit",
+      "vegetable",
+      "food"
+    ],
+    "factual_validation": {
+      "appropriate_meaningful": "Some do not make sense",
+      "grammatically_correct": "Yes",
+      "knowledge_reflection_score": 3,
+      "raw_response": "{\n    \"appropriate_meaningful\": \"Some do not make sense\",\n    \"grammatically_correct\": \"Yes\",\n    \"knowledge_reflection_score\": 3,\n    \"reasoning\": \"Most completions are plausible and grammatical (tissue, stitches, artery, membrane). 'Incision' is semantically odd since surgeons make or extend an incision rather than 'cut the incision.' The sentence structure is grammatically fine without required commas. Overall reflects common surgical actions, with one mismatch.\"\n}"
+    },
+    "counterfactual_validation": {
+      "appropriate_meaningful": "Some do not make sense",
+      "grammatically_correct": "Yes",
+      "knowledge_reflection_score": 4,
+      "raw_response": "{\n    \"appropriate_meaningful\": \"Some do not make sense\",\n    \"grammatically_correct\": \"Yes\",\n    \"knowledge_reflection_score\": 4,\n    \"reasoning\": \"The image shows a surgeon-like person slicing an orange. 'Fruit' and the generic 'food' fit and sound natural; 'vegetable' contradicts what is being cut. The sentence is grammatically fine with these completions. The idea of a surgeon cutting food captures the unusual aspect, though one option is inaccurate.\"\n}"
+    }
+  }
+]

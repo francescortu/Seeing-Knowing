@@ -1,4 +1,5 @@
 import math
+import numpy as np
 from PIL import Image, ImageDraw
 import torch
 import torchvision.transforms as T
@@ -526,6 +527,199 @@ class LlavaNextImageTokenVisualizer:
                     col_end = min((j + 1) * patch_width, W)
                     heatmap_values[row_start:row_end, col_start:col_end] += token_val
         return heatmap_values
+
+
+class LlavaNextSegmentationMapper:
+    """
+    Maps a segmented image to LLaVA-NeXT token representation.
+
+    This class handles the complex tokenization of LLaVA-NeXT where:
+    1. The image is split into patches at base resolution (full image)
+    2. The image is split into higher-resolution patches (scaled)
+    3. Tokens are: [base_patches] + [scaled_patches] + [newline_tokens]
+
+    For each token, this returns 1 if the corresponding patch(es) contain
+    non-white pixels, 0 otherwise.
+    """
+
+    def __init__(self, processor, white_threshold=250):
+        """
+        Parameters:
+            processor: LlavaNextProcessor with attributes:
+                - patch_size (e.g., 14)
+                - image_processor.image_grid_pinpoints (list of resolutions)
+                - num_additional_image_tokens (optional, default 1)
+            white_threshold: Pixel value above which (for all RGB channels)
+                           a pixel is considered white (default 250)
+        """
+        self.processor = processor
+        self.white_threshold = white_threshold
+
+    def get_token_mask(self, segmented_image, original_image):
+        """
+        Generate a binary token mask for the segmented image.
+
+        Parameters:
+            segmented_image (PIL.Image): The segmented version with white background
+            original_image (PIL.Image): The original image (used to get correct preprocessing)
+
+        Returns:
+            torch.Tensor: Binary mask of shape [num_tokens] where 1 = non-white patch, 0 = white patch
+        """
+        # Preprocess both images to get the pixel_values and image_sizes
+        # We need original_image to get the correct image_sizes
+        inputs_original = self.processor.image_processor.preprocess(
+            images=[original_image], do_normalize=False, return_tensors="pt"
+        )
+        inputs_segmented = self.processor.image_processor.preprocess(
+            images=[segmented_image], do_normalize=False, return_tensors="pt"
+        )
+
+        # Extract necessary info
+        orig_height, orig_width = inputs_original["image_sizes"][0]
+        patch_size = self.processor.patch_size
+        grid_pinpoints = self.processor.image_processor.image_grid_pinpoints
+
+        # Get best resolution and scale factors
+        h_best, w_best = select_best_resolution(
+            (orig_height, orig_width), grid_pinpoints
+        )
+        final_height, final_width = inputs_segmented["pixel_values"][0].shape[-2:]
+        scale_h = h_best // final_height
+        scale_w = w_best // final_width
+
+        # Compute grid dimensions
+        base_patches_h = final_height // patch_size
+        base_patches_w = final_width // patch_size
+        base_patches_count = base_patches_h * base_patches_w
+
+        scaled_patches_h = base_patches_h * scale_h
+        scaled_patches_w = base_patches_w * scale_w
+
+        # Adjust scaled grid for aspect ratio
+        original_aspect_ratio = orig_width / orig_height
+        current_aspect_ratio = scaled_patches_w / scaled_patches_h
+        if original_aspect_ratio > current_aspect_ratio:
+            new_height = (orig_height * scaled_patches_w) // orig_width
+            padding = (scaled_patches_h - new_height) // 2
+            scaled_patches_h -= padding * 2
+        else:
+            new_width = (orig_width * scaled_patches_h) // orig_height
+            padding = (scaled_patches_w - new_width) // 2
+            scaled_patches_w -= padding * 2
+
+        scaled_patches_count = scaled_patches_h * scaled_patches_w
+        newline_count = scaled_patches_h
+
+        total_tokens = base_patches_count + scaled_patches_count + newline_count
+
+        # Process the segmented pixel values
+        # pixel_values shape: [num_images, C, H, W] where num_images = 1 + num_patches
+        # First image is base (full image), rest are high-res patches
+        pixel_values = inputs_segmented["pixel_values"][0]  # [num_images, 3, 336, 336]
+
+        # Convert to numpy and denormalize if needed
+        if pixel_values.max() <= 1.0:
+            pixel_values = pixel_values * 255.0
+
+        # Initialize mask
+        token_mask = torch.zeros(total_tokens, dtype=torch.float32)
+
+        # Helper function to check if a patch is non-white
+        def is_patch_non_white(image_np, row_start, row_end, col_start, col_end):
+            """Check if patch contains any non-white pixels"""
+            patch = image_np[row_start:row_end, col_start:col_end, :]
+            # A pixel is white if ALL channels are above threshold
+            is_white = (
+                (patch[:, :, 0] > self.white_threshold)
+                & (patch[:, :, 1] > self.white_threshold)
+                & (patch[:, :, 2] > self.white_threshold)
+            )
+            # Patch is non-white if ANY pixel is non-white
+            return not is_white.all()
+
+        # Process BASE patches (first image in pixel_values)
+        base_image = (
+            pixel_values[0].permute(1, 2, 0).cpu().numpy().astype(np.uint8)
+        )  # [H, W, 3]
+        base_H, base_W = base_image.shape[:2]
+        base_patch_h = base_H // base_patches_h
+        base_patch_w = base_W // base_patches_w
+
+        for token_idx in range(base_patches_count):
+            row = token_idx // base_patches_w
+            col = token_idx % base_patches_w
+            row_start = row * base_patch_h
+            row_end = min((row + 1) * base_patch_h, base_H)
+            col_start = col * base_patch_w
+            col_end = min((col + 1) * base_patch_w, base_W)
+
+            if is_patch_non_white(base_image, row_start, row_end, col_start, col_end):
+                token_mask[token_idx] = 1.0
+
+        # Process SCALED patches (remaining images in pixel_values, arranged in 2x2 grid)
+        # Merge the high-res patches into one large image
+        if pixel_values.shape[0] > 1:
+            # Merge sub-images in 2x2 grid (clockwise: top-left, top-right, bottom-left, bottom-right)
+            subimgs = pixel_values[1:]  # [4, 3, 336, 336]
+            merged_H = final_height * scale_h
+            merged_W = final_width * scale_w
+            merged = torch.zeros(
+                (3, merged_H, merged_W),
+                dtype=pixel_values.dtype,
+                device=pixel_values.device,
+            )
+
+            # Arrange in 2x2 grid
+            if scale_h == 2 and scale_w == 2:
+                # Standard 2x2 case
+                merged[:, 0:final_height, 0:final_width] = subimgs[0]  # top-left
+                merged[:, 0:final_height, final_width:merged_W] = subimgs[
+                    1
+                ]  # top-right
+                merged[:, final_height:merged_H, 0:final_width] = subimgs[
+                    2
+                ]  # bottom-left
+                merged[:, final_height:merged_H, final_width:merged_W] = subimgs[
+                    3
+                ]  # bottom-right
+            else:
+                # Handle other scale factors by tiling appropriately
+                for idx, subimg in enumerate(subimgs):
+                    row_idx = idx // scale_w
+                    col_idx = idx % scale_w
+                    row_start = row_idx * final_height
+                    col_start = col_idx * final_width
+                    merged[
+                        :,
+                        row_start : row_start + final_height,
+                        col_start : col_start + final_width,
+                    ] = subimg
+
+            merged_image = (
+                merged.permute(1, 2, 0).cpu().numpy().astype(np.uint8)
+            )  # [H, W, 3]
+            merged_H, merged_W = merged_image.shape[:2]
+            scaled_patch_h = merged_H // scaled_patches_h
+            scaled_patch_w = merged_W // scaled_patches_w
+
+            for token_idx in range(scaled_patches_count):
+                row = token_idx // scaled_patches_w
+                col = token_idx % scaled_patches_w
+                row_start = row * scaled_patch_h
+                row_end = min((row + 1) * scaled_patch_h, merged_H)
+                col_start = col * scaled_patch_w
+                col_end = min((col + 1) * scaled_patch_w, merged_W)
+
+                if is_patch_non_white(
+                    merged_image, row_start, row_end, col_start, col_end
+                ):
+                    token_mask[base_patches_count + token_idx] = 1.0
+
+        # NEWLINE tokens - always set to 0 (they don't correspond to image patches)
+        # They are already 0 from initialization
+
+        return token_mask
 
 
 class Gemma3ImageTokenVisualizer:

@@ -1,0 +1,33 @@
+{
+  "model_name": "google/gemma-3-12b-it",
+  "experiment_tag": "google-gemma-3-12b-it_v16_arXiv_k5",
+  "dataset_name": "francescortu/whoops-aha",
+  "k_heads": 5,
+  "gamma_values": [
+    -3.0,
+    -2.5,
+    -2.0,
+    -1.0,
+    -0.5,
+    0.0,
+    0.5,
+    1.0,
+    1.5,
+    2.0,
+    2.5,
+    3.0
+  ],
+  "ablation_types": [
+    "last-row",
+    "last-row-img",
+    "last-row-text",
+    "full",
+    "mlp"
+  ],
+  "use_paired": true,
+  "rebalanced_weight": false,
+  "control": false,
+  "debug": false,
+  "debug_samples": 10,
+  "output_dir": "results/1_heads_ablation"
+}
