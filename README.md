@@ -2,8 +2,6 @@
 
 Official repository for the paper _When Seeing Overrides Knowing: Disentangling Knowledge Conflict in Vision-Language Models_.
 
-The original research codebase used during development was larger and included exploratory notebooks, rebuttal work, and local dataset exports. This repository is the paper-facing version: it keeps the code paths, scripts, and compact artifacts needed to understand and reproduce the experiments reported in the paper and appendix.
-
 Canonical dataset: [`francescortu/whoops-aha`](https://huggingface.co/datasets/francescortu/whoops-aha)
 
 ## What Is Here
@@ -77,9 +75,7 @@ The default and canonical dataset source in the experiment code is the Hugging F
 
 Local exported dataset folders from paper submission preparation are treated as derived artifacts, not as the source of truth. In particular, older local ARR exports may contain recompressed image files and should not be used as the canonical reference for reproducing the main results.
 
-## Reproducibility
-
-The checked-in `results/` tree contains the compact artifacts used for the paper:
+The checked-in `results/` tree contains the compact paper artifacts:
 
 - selected heads
 - paired intervention summaries
@@ -89,5 +85,3 @@ The checked-in `results/` tree contains the compact artifacts used for the paper
 - validation summaries
 - segmentation summaries
 - POPE control results
-
-See [REPRODUCIBILITY.md](/orfeo/cephfs/home/dssc/francescortu/Seeing-Knowing/REPRODUCIBILITY.md) for the rerun procedure and [ARTIFACTS.md](/orfeo/cephfs/home/dssc/francescortu/Seeing-Knowing/ARTIFACTS.md) for the artifact map.
