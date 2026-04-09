@@ -2,7 +2,7 @@ import argparse
 import importlib.util
 from pathlib import Path
 
-from src.paper_results import save_mlp_results
+from src.result_tables import save_mlp_results
 
 
 full_path = Path(__file__).parent.parent / "1_heads_ablation" / "2_full.py"

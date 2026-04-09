@@ -9,7 +9,7 @@ import pandas as pd
 from easyroutine.interpretability import ExtractionConfig
 
 from src.experiment_manager import ExperimentManager, BaseConfig, DebugConfig
-from src.paper_results import save_head_selection_results
+from src.result_tables import save_head_selection_results
 
 
 def main():

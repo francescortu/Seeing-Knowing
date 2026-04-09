@@ -958,7 +958,7 @@ def main():
         results_csv_path=None,
     )
     logger.info("Multiple resid ablation experiments completed.")
-    from src.paper_results import save_localization_results
+    from src.result_tables import save_localization_results
 
     save_localization_results(results_df, args.model)
     print("\nExperiment run complete. Results saved in results/.")

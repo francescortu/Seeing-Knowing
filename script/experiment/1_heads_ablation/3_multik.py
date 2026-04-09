@@ -16,7 +16,7 @@ import pandas as pd
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../src"))
 )
-from src.paper_results import save_multik_results
+from src.result_tables import save_multik_results
 
 import importlib.util
 

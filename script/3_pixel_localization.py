@@ -29,7 +29,7 @@ from dataclasses import dataclass  # Removed unused field, asdict
 from easyroutine.interpretability import Intervention
 from src.datastatistics import statistics_computer
 from src.experiment_manager import ExperimentManager, BaseConfig
-from src.paper_results import save_localization_results
+from src.result_tables import save_localization_results
 
 from easyroutine.logger import logger, setup_logging
 from easyroutine.interpretability import ExtractionConfig

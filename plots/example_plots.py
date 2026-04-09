@@ -12,7 +12,7 @@ from plot_functions import (
     plot_experiment2,
     plot_heads_heatmap,
 )
-from src.paper_results import default_table_paths
+from src.result_tables import default_table_paths
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

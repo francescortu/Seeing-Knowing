@@ -17,7 +17,7 @@ sys.path.append(
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../.."))
 from src.experiment_manager import ExperimentManager
 from src.datastatistics import statistics_computer
-from src.paper_results import save_intervention_results, save_mlp_results
+from src.result_tables import save_intervention_results, save_mlp_results
 from easyroutine.interpretability import Intervention
 from easyroutine.logger import logger, setup_logging
 
