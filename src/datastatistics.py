@@ -483,13 +483,22 @@ class StatisticsComputer:
                     indexes_cfact_gt_fact_text.append(i)
 
         return {
-            "Fact Acc": 100 - (stats.cfact_higher_images / stats.valid_images * 100)
-            if stats.valid_images
-            else 0,
             "Image Cfact logit": stats.total_cfact_logit_images,
             "Image Fact Logit": stats.total_fact_logit_images,
+            "Text Cfact Logit": stats.total_cfact_logit_text_only,
+            "Text Fact Logit": stats.total_fact_logit_text_only,
+            "Image Cfact>Fact": stats.cfact_higher_images / stats.valid_images * 100
+            if stats.valid_images
+            else 0,
+            "Text Cfact>Fact": stats.cfact_higher_text / stats.valid_text * 100
+            if stats.valid_text
+            else 0,
+            "Image Valid Examples": stats.valid_images,
+            "Text Valid Examples": stats.valid_text,
             "Image Pos Higher": np.array(stats.higher_pos_image, dtype=float).mean(),
-            "indexes_cfact_gt_fact_text": indexes_cfact_gt_fact_text,
+            "Text Pos Higher": -1 if not text_cfact_logits else np.array(stats.higher_pos_text, dtype=float).mean(),
+            "indexes_cfact_gt_fact_text": None if not text_cfact_logits else indexes_cfact_gt_fact_text
+            # "top_k_data": topk_data,
         }
 
     def _generate_report(self, stats: StatisticsResult) -> str:
@@ -498,7 +507,14 @@ class StatisticsComputer:
             "\n ======== Total Statistics ========\n"
             f"Total cfact logit images: {stats.total_cfact_logit_images}\n"
             f"Total fact logit images: {stats.total_fact_logit_images}\n"
+            f"Total cfact logit text only: {stats.total_cfact_logit_text_only}\n"
+            f"Total fact logit text only: {stats.total_fact_logit_text_only}\n"
             f"Number of valid examples (image+text): {stats.valid_images}\n"
+            f"Number of times cfact > fact (image+text): {stats.cfact_higher_images}/{stats.valid_images} "
+            f"-- {stats.cfact_higher_images / stats.valid_images * 100:.2f}%\n"
+            f"Number of valid examples (text only): {stats.valid_text}\n"
+            f"Number of times cfact > fact (text only): {stats.cfact_higher_text}/{stats.valid_text} "
+            f"-- {stats.cfact_higher_text / stats.valid_text * 100:.2f}%\n"
         )
 
 

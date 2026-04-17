@@ -1,8 +1,5 @@
 import sys
 import os
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 import pandas as pd
 
 # import numpy as np # Removed unused import
@@ -25,11 +22,16 @@ from typing import (
     Union,
 )  # Removed unused Union
 from dataclasses import dataclass  # Removed unused field, asdict
+from tqdm import tqdm
+
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../src"))
+)
+sys.path.append(os.path.join(os.path.dirname(__file__), "../../.."))
 
 from easyroutine.interpretability import Intervention
 from src.datastatistics import statistics_computer
 from src.experiment_manager import ExperimentManager, BaseConfig
-from src.result_tables import save_localization_results
 
 from easyroutine.logger import logger, setup_logging
 from easyroutine.interpretability import ExtractionConfig
@@ -38,6 +40,7 @@ from easyroutine.interpretability.activation_cache import ActivationCache, subli
 # import and set .env variables
 from dotenv import load_dotenv
 import random
+from easyroutine.console.progress import progress
 
 random.seed(42)
 
@@ -59,6 +62,7 @@ class ImgCfactLocalizationConfig:
 
     model_name: str
     experiment_tag: str
+    dataset_name: str = "francescortu/whoops-aha"
     debug: bool = False
     experiment_description: Optional[str] = None
     k_heads: int = 20
@@ -79,11 +83,11 @@ class ImgCfactLocalizationExperiment:
         )
         if self.config.debug:
             self.manager.config.debug.debug = True
-            self.manager.config.debug.debug_samples = 20
+            self.manager.config.debug.debug_samples = 500
         self.output_dir: Optional[Path] = None  # Specific output dir for this run
         # self.cfact_heads: Optional[List[Tuple[int, int]]] = None
         # self.fact_heads: Optional[List[Tuple[int, int]]] = None
-        self.manager.load_dataset_from_hf()
+        self.manager.load_dataset_from_hf(config.dataset_name)
         self.manager.setup_model()
         self.manager.setup_dataloader()
         self.manager.setup_model_specific_variables(filter_dataloader=True)
@@ -121,6 +125,111 @@ class ImgCfactLocalizationExperiment:
             register_aggregation=("input_embeddings_gradients", sublist),
         )
         return cache
+
+    def extract_integrated_gradients(self, num_steps: int = 50):
+        """
+        Extract TRUE integrated gradients using Riemann sum approximation.
+
+        IG = (x - baseline) × ∫[α=0→1] ∂f(baseline + α(x-baseline))/∂x dα
+
+        Approximated as:
+        IG ≈ (x - 0) × (1/n) × Σ[i=1→n] ∂f(α_i × x)/∂x
+
+        where α_i = i/n for i=1,...,n
+
+        This requires num_steps forward/backward passes per sample.
+        """
+        self.logger.info(
+            f"Computing TRUE integrated gradients with {num_steps} steps..."
+        )
+        self.logger.warning(
+            f"This will perform {num_steps} × {len(self.manager.dataloader)} gradient computations!"
+        )
+
+        if self.cfact_heads is None:
+            raise ValueError("cfact_heads must be set")
+
+        # Set vocabulary index
+        for i in range(len(self.manager.dataloader)):
+            paired_token = self.manager.token_pair[i]
+            cfact_idx = self.manager.tokenizer(text=paired_token[0])["input_ids"][0][1]
+            self.manager.dataloader[i]["text_image_inputs"]["vocabulary_index"] = (
+                cfact_idx
+            )
+
+        integrated_gradients_list = []
+        token_dict = None
+
+        # Process each sample
+        for sample_idx in tqdm(
+            range(len(self.manager.dataloader)), desc="Processing samples for IG"
+        ):
+            accumulated_gradients = None
+            original_image = self.manager.dataloader[sample_idx]["text_image_inputs"][
+                "pixel_values"
+            ].clone()
+
+            # Compute gradients at num_steps interpolated inputs
+            for step in range(1, num_steps + 1):
+                alpha = step / num_steps
+                self.manager.dataloader[sample_idx]["text_image_inputs"][
+                    "pixel_values"
+                ] = original_image * alpha
+
+                step_cache = self.manager.model.extract_cache(
+                    [self.manager.dataloader[sample_idx]["text_image_inputs"]],
+                    target_token_positions=["all-image"],
+                    extraction_config=ExtractionConfig(
+                        extract_embed=True,
+                        keep_gradient=True,
+                        save_logits=False,
+                    ),
+                    register_aggregation=("input_embeddings_gradients", sublist),
+                    use_tqdm=False,
+                )
+
+                step_gradient = step_cache["input_embeddings_gradients"][0]
+
+                if accumulated_gradients is None:
+                    accumulated_gradients = step_gradient
+                else:
+                    accumulated_gradients += step_gradient
+
+                if token_dict is None:
+                    token_dict = step_cache["token_dict"]
+
+            # Restore original image
+            self.manager.dataloader[sample_idx]["text_image_inputs"]["pixel_values"] = (
+                original_image
+            )
+
+            # Average gradients
+            avg_gradient = accumulated_gradients / num_steps
+
+            # Get actual embeddings
+            final_cache = self.manager.model.extract_cache(
+                [self.manager.dataloader[sample_idx]["text_image_inputs"]],
+                target_token_positions=["all-image"],
+                extraction_config=ExtractionConfig(
+                    extract_embed=True,
+                    keep_gradient=False,
+                    save_logits=False,
+                ),
+                use_tqdm=False,
+            )
+            actual_embedding = final_cache["input_embeddings"][0]
+
+            # Integrated gradient = (input - 0) × average_gradient
+            integrated_grad = actual_embedding * avg_gradient
+            integrated_gradients_list.append(integrated_grad)
+
+        # Create result cache
+        integrated_cache = ActivationCache()
+        integrated_cache["input_embeddings_gradients"] = integrated_gradients_list
+        integrated_cache["token_dict"] = token_dict
+
+        self.logger.info("TRUE integrated gradients computation complete.")
+        return integrated_cache
 
     def extract_patterns(self):
         self.logger.debug("Identifying top pixel...")
@@ -628,6 +737,7 @@ def run_multiple_resid_ablation_with_control(
     ],
     top_pixels_filename: str = "top_pixels.json",
     saliency: Optional[ActivationCache] = None,
+    integrated_saliency: Optional[ActivationCache] = None,
     results_csv_path: Optional[Path] = None,
 ):
     base_desc = "resid_ablation"
@@ -664,6 +774,9 @@ def run_multiple_resid_ablation_with_control(
             df, f"{base_desc}_control", "N/A", data_control, results_csv_path
         )
 
+        # Collect top pixels for JSON output
+        top_pixels_dict = {"top_pixels": top_pixels}
+
         # 3. Gradient-based experiment (no control, with saliency)
         if saliency:
             data_grad, top_pixels_grad = experiment.ablate_resid(
@@ -673,17 +786,23 @@ def run_multiple_resid_ablation_with_control(
                 **ablate_args,
             )
             df = add_to_df(df, f"{base_desc}_grad", "N/A", data_grad, results_csv_path)
-            add_to_json(
-                {"top_pixels": top_pixels, "top_pixels_grad": top_pixels_grad},
-                val,
-                top_pixels_filename,
+            top_pixels_dict["top_pixels_grad"] = top_pixels_grad
+
+        # 4. Integrated gradient-based experiment (no control, with integrated saliency)
+        if integrated_saliency:
+            data_intgrad, top_pixels_intgrad = experiment.ablate_resid(
+                pattern_cache=cache,
+                random_control=False,
+                saliency=integrated_saliency,
+                **ablate_args,
             )
-        else:
-            add_to_json(
-                {"top_pixels": top_pixels},
-                val,
-                top_pixels_filename,
+            df = add_to_df(
+                df, f"{base_desc}_intgrad", "N/A", data_intgrad, results_csv_path
             )
+            top_pixels_dict["top_pixels_intgrad"] = top_pixels_intgrad
+
+        # Save all top pixels to JSON
+        add_to_json(top_pixels_dict, val, top_pixels_filename)
 
         logger.info(
             f"Finished experiment: {base_desc} with {iteration_param_name}={val}"
@@ -745,9 +864,26 @@ def parse_args():
         help="Model name to use for the experiment.",
     )
     parser.add_argument(
+        "--dataset",
+        type=str,
+        default="francescortu/whoops-aha",
+        help="Dataset name to use for the experiment.",
+    )
+    parser.add_argument(
         "--saliency",
         action="store_true",
-        help="Use saliency maps for the experiment.",
+        help="Use saliency maps (standard gradients) for the experiment.",
+    )
+    parser.add_argument(
+        "--integrated_gradients",
+        action="store_true",
+        help="Use integrated gradients for the experiment.",
+    )
+    parser.add_argument(
+        "--ig_steps",
+        type=int,
+        default=50,
+        help="Number of interpolation steps for integrated gradients (default: 50).",
     )
 
     return parser.parse_args()
@@ -759,8 +895,9 @@ def main():
     # --- Configuration Setup ---
     config = ImgCfactLocalizationConfig(
         model_name=args.model,
-        debug=args.debug,
         experiment_tag=args.tag,  # Updated tag
+        dataset_name=args.dataset,
+        debug=args.debug,
         k_heads=args.k_heads,
         # Auto-generate description based on selected experiments
         experiment_description=f"Run: k={args.k_heads}",
@@ -776,7 +913,20 @@ def main():
 
     # ... rest of the setup (model, dataloader, heads, cache) remains the same ...
 
-    saliency_cache = experiment.extract_gradients()
+    saliency_cache = None
+    integrated_saliency_cache = None
+
+    if args.saliency:
+        logger.info("Extracting standard gradients...")
+        saliency_cache = experiment.extract_gradients()
+
+    if args.integrated_gradients:
+        logger.info(f"Extracting integrated gradients with {args.ig_steps} steps...")
+        integrated_saliency_cache = experiment.extract_integrated_gradients(
+            num_steps=args.ig_steps
+        )
+
+    logger.info("Extracting attention patterns...")
     cache = experiment.extract_patterns()
     logger.info("Setup complete.")
 
@@ -803,13 +953,14 @@ def main():
         results_df,
         mode=args.mode,
         top_pixels_filename=None,
-        saliency=saliency_cache if args.saliency else None,
+        saliency=saliency_cache,
+        integrated_saliency=integrated_saliency_cache,
         results_csv_path=None,
     )
     logger.info("Multiple resid ablation experiments completed.")
+    from src.result_tables import save_localization_results
 
     save_localization_results(results_df, args.model)
-
     print("\nExperiment run complete. Results saved in results/.")
 
 

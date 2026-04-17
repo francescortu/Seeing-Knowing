@@ -1,8 +1,5 @@
 import sys
 import os
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 import argparse
 from pathlib import Path
 
@@ -11,9 +8,14 @@ import numpy as np
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 
+# Add src to path for imports
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../src"))
+)
+sys.path.append(os.path.join(os.path.dirname(__file__), "../../.."))
 from src.experiment_manager import ExperimentManager
 from src.datastatistics import statistics_computer
-from src.result_tables import save_intervention_results
+from src.result_tables import save_intervention_results, save_mlp_results
 from easyroutine.interpretability import Intervention
 from easyroutine.logger import logger, setup_logging
 
@@ -27,40 +29,17 @@ class FullExperimentConfig:
     experiment_tag: str
     dataset_name: str = "francescortu/whoops-aha"
     k_heads: int = 20
-    gamma_values: List[float] = field(  # -lambda
-        default_factory=lambda: [
-            -40,
-            -20,
-            -10,
-            -5,
-            -3,
-            -2.5,
-            -2,
-            -1.5,
-            -1,
-            -0.5,
-            0,
-            0.5,
-            1,
-            1.5,
-            2,
-            2.5,
-            3,
-            5,
-            10,
-            20,
-            40,
-        ]
+    gamma_values: List[float] = field(
+        default_factory=lambda: [-3,-2.5,-2,-1.8,-1.6,-1.5,-1.3,-1.2,-1.1,-1,-0.5,0,0.5,1,1.5,2,2.5,3]
     )
-
+    # lambda_values: List[float] = field(
+    #     default_factory=lambda: [0, 0.5, 1, 1.5, 2, 2.5, 3]
+    # )
+    mlp_ablation_layers: List[int] = field(
+        default_factory=lambda: [29, 30, 31]
+    )
     ablation_types: List[str] = field(
-        default_factory=lambda: [
-            "last-row",
-            "last-row-img",
-            "last-row-text",
-            "full",
-            "mlp",
-        ]
+        default_factory=lambda: ["last-row", "last-row-img", "last-row-text", "full", "mlp"]
     )
     use_paired: bool = False
     rebalanced_weight: bool = True
@@ -184,35 +163,19 @@ class FullExperimentRunner:
             )
         self.manager.model.register_interventions(interventions=inters)
 
-    def set_mlp_intervention(self, gamma: float, lambda_param: float) -> None:
+    def set_mlp_intervention(self, gamma: float, lambda_param: float, mlp_ablation_layers:List[int]) -> None:
         interventions = [
             Intervention(
                 type="full",
-                activation="mlp_out_29",
+                activation = f"mlp_out_{i}",
                 token_positions=["last"],
                 patching_values="ablation",
                 multiplication_value=gamma,
-            ),
-            Intervention(
-                type="full",
-                activation="mlp_out_30",
-                token_positions=["last"],
-                patching_values="ablation",
-                multiplication_value=gamma,
-            ),
-            Intervention(
-                type="full",
-                activation="mlp_out_31",
-                token_positions=["last"],
-                patching_values="ablation",
-                multiplication_value=gamma,
-            ),
+            ) for i in mlp_ablation_layers
         ]
         self.manager.model.register_interventions(interventions=interventions)
 
-    def evaluate(
-        self, evaluate_generation_quality: bool = False, evaluate_coco: bool = False
-    ) -> pd.DataFrame:
+    def evaluate(self, evaluate_generation_quality:bool =False, evaluate_coco:bool=False) -> pd.DataFrame:
         cfact, fact = self.select_heads()
         results = []
 
@@ -225,7 +188,9 @@ class FullExperimentRunner:
         base_generation_output = None
         if evaluate_generation_quality:
             base_generation_output = self.manager.return_generation_logits()
-
+        
+        
+        
         for g, lam in zip(self.cfg.gamma_values, lambda_values):
             if self.cfg.use_paired:
                 img_w, txt_w = self.compute_paired_weights(cfact, fact, g, lam)
@@ -237,7 +202,9 @@ class FullExperimentRunner:
             for ab in ablation_list:
                 self.manager.model.clean_interventions()
                 if ab == "mlp":
-                    self.set_mlp_intervention(gamma=g, lambda_param=lam)
+                    self.set_mlp_intervention(
+                        gamma=g, lambda_param=lam, mlp_ablation_layers=self.cfg.mlp_ablation_layers
+                    )
                     _, data = statistics_computer(
                         model=self.manager.model,
                         dataloader=self.manager.dataloader,
@@ -259,27 +226,22 @@ class FullExperimentRunner:
                         # return_essential_data=True,
                     )
                 if evaluate_generation_quality:
-                    data_gen = self.manager.evaluate_generation_quality(
-                        base_generation_output
-                    )
-                    row = {"AblationType": ab, "Lambda": lam, **data, **data_gen}
+                    data_gen = self.manager.evaluate_generation_quality(base_generation_output)
+                    row = {"AblationType": ab, "Gamma": g, "Lambda": lam, **data, **data_gen}
                 elif evaluate_coco:
                     data_coco = self.manager.evaluate_coco()
-                    row = {"AblationType": ab, "Lambda": lam, **data, **data_coco}
+                    row = {"AblationType": ab, "Gamma": g, "Lambda": lam, **data, **data_coco}
                 else:
-                    row = {"AblationType": ab, "Lambda": lam, **data}
+                    row = {"AblationType": ab, "Gamma": g, "Lambda": lam, **data}
                 results.append(row)
         return pd.DataFrame(results)
 
-    def run(
-        self, evaluate_generation_quality: bool = False, evaluate_coco: bool = False
-    ) -> pd.DataFrame:
-        df = self.evaluate(
+    def run(self, evaluate_generation_quality:bool = False, evaluate_coco:bool=False) -> pd.DataFrame:
+        return self.evaluate(
             evaluate_generation_quality=evaluate_generation_quality,
             evaluate_coco=evaluate_coco,
         )
-        return df
-
+    
     # def run_generation_quality_evaluation(self) -> pd.DataFrame:
     #     """
     #     Run generation quality evaluation for the model under the interventions set in the model.
@@ -293,29 +255,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", type=str, default=None)
     parser.add_argument("--tag", type=str, default="default")
     parser.add_argument("--k_heads", type=int, default=None)
-    parser.add_argument(
-        "--lambda_values",
-        "--lambda",
-        "--lambd",
-        dest="lambda_values",
-        nargs="+",
-        type=float,
-        help="Signed intervention strength used in the paper plots.",
-    )
+    parser.add_argument("--gamma", nargs="+", type=float)
+    # parser.add_argument("--lambda", dest="lambda_", nargs="+", type=float)
     parser.add_argument("--ablation_types", nargs="+", type=str)
     parser.add_argument("--use_paired", action="store_true")
     parser.add_argument("--control", action="store_true")
+    parser.add_argument(
+        "--no_rebalance_weight", action="store_false", dest="rebalanced_weight"
+    )
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--debug_samples", type=int)
     parser.add_argument(
-        "--evaluate_generation_quality",
-        action="store_true",
-        dest="evaluate_generation_quality",
-        default=False,
+        "--evaluate_generation_quality", action="store_true", dest="evaluate_generation_quality", default=False
     )
-    parser.add_argument(
-        "--evaluate_coco", action="store_true", dest="evaluate_coco", default=False
-    )
+    parser.add_argument("--evaluate_coco", action="store_true", dest="evaluate_coco", default=False)
+    parser.add_argument("--mlp-layers", nargs="+", type=int, default=None,
+                        help="List of MLP layers to ablate, e.g. 29 30 31")
     return parser.parse_args()
 
 
@@ -326,23 +281,31 @@ def main() -> None:
         base.dataset_name = args.dataset
     if args.k_heads:
         base.k_heads = args.k_heads
-    if args.lambda_values:
-        base.gamma_values = [-value for value in args.lambda_values]
+    if args.gamma:
+        base.gamma_values = args.gamma
+    # if args.lambda_:
+    #     base.lambda_values = args.lambda_
     if args.ablation_types:
         base.ablation_types = args.ablation_types
     base.use_paired = args.use_paired
     base.control = args.control
-    base.rebalanced_weight = False
+    if args.rebalanced_weight is not None:
+        base.rebalanced_weight = args.rebalanced_weight
     if args.debug:
         base.debug = True
     if args.debug_samples:
         base.debug_samples = args.debug_samples
+    if args.mlp_layers:
+        base.mlp_ablation_layers = args.mlp_layers
     runner = FullExperimentRunner(base)
     result_df = runner.run(
         evaluate_generation_quality=args.evaluate_generation_quality,
         evaluate_coco=args.evaluate_coco,
     )
-    save_intervention_results(result_df, args.model)
+    if set(result_df["AblationType"].unique()) == {"mlp"}:
+        save_mlp_results(result_df, args.model)
+    else:
+        save_intervention_results(result_df, args.model)
 
 
 if __name__ == "__main__":

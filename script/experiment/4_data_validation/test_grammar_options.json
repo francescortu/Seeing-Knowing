@@ -1,0 +1,38 @@
+[
+  {
+    "index": 0,
+    "image_id": "93aba1b36f51fad62433d195ebf5cc555e25193f638c9575dff94712b3125984",
+    "text": "The boy is holding a",
+    "factual_tokens": [
+      "ball",
+      "book",
+      "balloon",
+      "toy",
+      "pencil"
+    ],
+    "counterfactual_tokens": [
+      "lips",
+      "cigar",
+      "smoke",
+      "mouthpiece",
+      "cigarette",
+      "breath",
+      "puff",
+      "drag",
+      "roll",
+      "pipe"
+    ],
+    "factual_validation": {
+      "appropriate_meaningful": "Yes",
+      "grammatically_correct": "Yes",
+      "knowledge_reflection_score": 5,
+      "raw_response": "{\n    \"appropriate_meaningful\": \"Yes\",\n    \"grammatically_correct\": \"Yes\",\n    \"knowledge_reflection_score\": 5,\n    \"reasoning\": \"All completions are appropriate and meaningful, creating grammatically correct sentences. The sentence and completions reflect common knowledge as a boy can hold any of these items.\"\n}"
+    },
+    "counterfactual_validation": {
+      "appropriate_meaningful": "Some do not make sense",
+      "grammatically_correct": "Some do not make sense",
+      "knowledge_reflection_score": 5,
+      "raw_response": "```json\n{\n    \"appropriate_meaningful\": \"Some do not make sense\",\n    \"grammatically_correct\": \"Some do not make sense\",\n    \"knowledge_reflection_score\": 5,\n    \"reasoning\": \"The image shows a young boy holding what appears to be a lit cigarette or a similar smoking device. Completions like 'cigar', 'cigarette', 'mouthpiece', 'roll', and 'pipe' are appropriate and meaningful as they describe what the boy is holding. However, 'lips', 'smoke', 'breath', 'puff', and 'drag' are not things the boy is 'holding' in this context, making them inappropriate or grammatically incorrect when inserted into the sentence. The sentence and appropriate completions accurately reflect the strange/anomalous thing in the image, which is a young boy smoking.\"\n}\n```"
+    }
+  }
+]

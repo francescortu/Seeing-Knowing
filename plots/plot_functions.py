@@ -117,11 +117,14 @@ def plot_experiment1_combined(df_llava, df_gemma, save_path=None):
     # Prepare data for both models
     for df in [df_llava, df_gemma]:
         if "image_diff" not in df.columns:
-            # Rename the column if it doesn't exist
-            if "Fact Acc" in df.columns:
+            if "factual_accuracy_pct" in df.columns:
+                df["image_diff"] = df["factual_accuracy_pct"]
+            elif "Fact Acc" in df.columns:
                 df["image_diff"] = df["Fact Acc"]
             else:
-                raise ValueError("Column 'Fact Acc' not found in dataframe")
+                raise ValueError("Column 'factual_accuracy_pct' not found in dataframe")
+        if "Lambda" not in df.columns and "lambda" in df.columns:
+            df["Lambda"] = df["lambda"]
 
     # Extract baseline values
     baseline_llava = df_llava[df_llava["Lambda"] == 0]["image_diff"].unique()[0]
@@ -211,6 +214,42 @@ def plot_experiment2(df, model_name="LLaVA-NeXT", save_path=None):
     """
     # Set custom theme
     set_custom_theme()
+
+    if {"method", "pixels_removed_pct", "factual_accuracy_pct"}.issubset(df.columns):
+        set_custom_theme()
+        fig, ax = plt.subplots(figsize=(8, 6))
+        color_map = {
+            "Through Attn Heads": "#009E73",
+            "Random": "darkgray",
+            "Through Gradients": "#D55E00",
+        }
+        linestyle_map = {
+            "Through Attn Heads": "solid",
+            "Random": "dotted",
+            "Through Gradients": "solid",
+        }
+        for method in ["Through Attn Heads", "Random", "Through Gradients"]:
+            method_df = df[df["method"] == method]
+            ax.plot(
+                method_df["pixels_removed_pct"],
+                method_df["factual_accuracy_pct"],
+                color=color_map[method],
+                linestyle=linestyle_map[method],
+                marker="o",
+                markersize=8,
+                linewidth=2,
+                label=method,
+            )
+        ax.set_xlabel("% Pixels Removed", fontsize=15)
+        ax.set_ylabel("Factual Accuracy (%)", fontsize=15)
+        ax.set_title(model_name, fontsize=16)
+        ax.set_xlim(0, 100)
+        ax.set_xticks(np.arange(0, 101, 20))
+        ax.legend(loc="best")
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path, dpi=400, bbox_inches="tight")
+        return fig, ax
 
     # Process data similar to the R code
     # 1. Filter out baseline and get full-pixel counts per condition
@@ -328,19 +367,21 @@ def plot_heads_heatmap(df, stats=None, save_path=None):
     # Set custom theme
     set_custom_theme()
 
-    # Process the data
     df2 = df.copy()
-
-    # Extract layer and head numbers from Head column
-    df2["layer"] = df2["Head"].str.extract(r"L(\d+)H").astype(int)
-    df2["head"] = df2["Head"].str.extract(r"H(\d+)$").astype(int)
-
-    # Process values similar to R code
-    df2["Value"] = (df2["Value"] + 0.5) * 100 - 50
-
-    # Identify factual and counterfactual heads
-    fact_heads = df2[df2["Value"] > 24.5]
-    cfact_heads = df2[df2["Value"] < -24.5]
+    if {"layer", "head", "factual_accuracy_pct"}.issubset(df2.columns):
+        df2["Value"] = df2["factual_accuracy_pct"]
+        fact_heads = df2[df2["factual_accuracy_pct"] > 75]
+        cfact_heads = df2[df2["factual_accuracy_pct"] < 25]
+        center_value = 50
+        colorbar_label = "Factual Accuracy (%)"
+    else:
+        df2["layer"] = df2["Head"].str.extract(r"L(\d+)H").astype(int)
+        df2["head"] = df2["Head"].str.extract(r"H(\d+)$").astype(int)
+        df2["Value"] = (df2["Value"] + 0.5) * 100
+        fact_heads = df2[df2["Value"] > 75]
+        cfact_heads = df2[df2["Value"] < 25]
+        center_value = 50
+        colorbar_label = "Factual Accuracy (%)"
 
     # Create a figure with two subplots if stats is provided, otherwise just the heatmap
     if stats is not None:
@@ -356,7 +397,8 @@ def plot_heads_heatmap(df, stats=None, save_path=None):
     heatmap_data = df2.pivot(index="head", columns="layer", values="Value")
 
     # Set max value for color scale
-    lim = max(abs(df2["Value"].max()), abs(df2["Value"].min()))
+    vmin = 0
+    vmax = 100
 
     # Create custom colormap like in R
     colors = ["#da1e28", "white", "#0072c3"]  # red, white, blue
@@ -366,10 +408,11 @@ def plot_heads_heatmap(df, stats=None, save_path=None):
     sns.heatmap(
         heatmap_data,
         cmap=cmap,
-        vmin=-lim,
-        vmax=lim,
+        vmin=vmin,
+        vmax=vmax,
+        center=center_value,
         ax=ax_heatmap,
-        cbar_kws={"label": "Factual Accuracy (%)"},
+        cbar_kws={"label": colorbar_label},
     )
 
     # Customize heatmap
@@ -395,42 +438,16 @@ def plot_heads_heatmap(df, stats=None, save_path=None):
     ):
         cbar = ax_heatmap.collections[0].colorbar
         if cbar is not None:
-            cbar.set_ticks([-lim, -25, 0, 25, lim])
-            cbar.set_ticklabels(["Counter-\nfactual", "25", "50", "75", "Factual"])
+            cbar.set_ticks([0, 25, 50, 75, 100])
+            cbar.set_ticklabels(["0", "25", "50", "75", "100"])
             if hasattr(cbar, "ax"):
                 cbar.ax.tick_params(labelsize=20)
-                cbar.ax.set_title("Factual Accuracy (%)", fontsize=22)
+                cbar.ax.set_title(colorbar_label, fontsize=22)
 
     # Add bar plot if stats is provided
     if stats is not None and ax_bar is not None:
         # Create summary dataframe for bar plot
-        summary_df = pd.DataFrame(
-            {
-                "metric": ["Counterfactual", "Factual", "All"],
-                "mean": [
-                    cfact_heads["value"].mean()
-                    if "value" in cfact_heads.columns
-                    else cfact_heads["Value"].mean(),
-                    fact_heads["value"].mean()
-                    if "value" in fact_heads.columns
-                    else fact_heads["Value"].mean(),
-                    df2["value"].mean()
-                    if "value" in df2.columns
-                    else df2["Value"].mean(),
-                ],
-                "se": [
-                    cfact_heads["value"].std() / np.sqrt(len(cfact_heads))
-                    if "value" in cfact_heads.columns
-                    else cfact_heads["Value"].std() / np.sqrt(len(cfact_heads)),
-                    fact_heads["value"].std() / np.sqrt(len(fact_heads))
-                    if "value" in fact_heads.columns
-                    else fact_heads["Value"].std() / np.sqrt(len(fact_heads)),
-                    df2["value"].std() / np.sqrt(len(df2))
-                    if "value" in df2.columns
-                    else df2["Value"].std() / np.sqrt(len(df2)),
-                ],
-            }
-        )
+        summary_df = stats.copy()
 
         # Set colors for the bar plot
         colors = ["#DA1E28", "#0072C3", "darkgrey"]  # red, blue, grey
@@ -453,7 +470,7 @@ def plot_heads_heatmap(df, stats=None, save_path=None):
         ax_bar.tick_params(axis="y", labelsize=22)
 
         # Format y-axis as percentage
-        ax_bar.yaxis.set_major_formatter(PercentFormatter(1.0))
+        ax_bar.yaxis.set_major_formatter(PercentFormatter())
 
         # Remove x-axis label
         ax_bar.set_xlabel("")

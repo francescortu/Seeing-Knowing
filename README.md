@@ -1,71 +1,84 @@
+# Seeing-Knowing
+
+<p align="center"><img src="fig1.png" width="70%" /></p>
 
 
+Official repository for the paper:
+[_When Seeing Overrides Knowing: Disentangling Knowledge Conflict in Vision-Language Models (ACL 2026)_](https://arxiv.org/abs/2507.13868).
 
-# When Seeing Overrides Knowing: Disentangling Knowledge Conflict in Vision-Language Models
-**Dataset: [🤗 WHOOPS-AHA!](https://huggingface.co/datasets/francescortu/whoops-aha)**
+Dataset: [`francescortu/whoops-aha`](https://huggingface.co/datasets/francescortu/whoops-aha)
 
+## What Is Here
 
-This repository contains the code and scripts for running experiments on the paper *"When Seeing Overrides Knowing: Disentangling Knowledge Conflict in Vision-Language Models"*. 
+- `script/1_logitlens.py`: top-level wrapper for head identification.
+- `script/2_intervention.py`: top-level wrapper for head intervention.
+- `script/3_pixel_localization.py`: top-level wrapper for visual localization.
+- `script/experiment/`: paper experiment code, including appendix experiments used in the final draft.
+- `src/`: shared experiment and evaluation utilities.
+- `plots/`: Python plotting helpers plus a checked-in artifact plotting entrypoint.
+- `results/`: canonical result tables used by the plotting scripts.
 
-### Prerequisites
+Heavy intermediate localization artifacts are intentionally not tracked in git.
 
-Ensure you have the following installed:
+## Installation
 
-- **Python**: Version `3.8+`
-- **Poetry**: For dependency and virtual environment management (version >`1.8`)
-- **Git**: For cloning repositories and handling submodules
+Requirements:
 
-### Install
+- Python `>=3.10,<3.13`
+- Poetry
+- access to the models used in the paper
+
+Install:
+
 ```bash
 poetry install
 ```
 
+## Main Commands
 
-## Run Experiments
+Use one of:
+
+- `llava-hf/llava-v1.6-mistral-7b-hf`
+- `google/gemma-3-12b-it`
+
+Head identification:
+
 ```bash
-    - <model_name>: either `llava-hf/llava-v1.6-mistral-7b-hf` or `google/gemma-3-12b-it`
+poetry run python script/1_logitlens.py --model llava-hf/llava-v1.6-mistral-7b-hf
 ```
 
-### Identification of components and heads
+Paired head intervention:
+
 ```bash
-poetry run python script/experiment/0_logit_lens/1_logitlens.py /
-                            --model <model_name>
-
+poetry run python script/2_intervention.py --model llava-hf/llava-v1.6-mistral-7b-hf --use_paired --lambda_values -3 -2.5 -2 -1.5 -1 -0.5 0 0.5 1 1.5 2 2.5 3
 ```
 
-### Intervention
-```bash 
-poetry run python script/2_intervention.py --model <model_name> --ablation_type last-row-paired  
-```
+Pixel localization:
 
-### Pixel Localization
 ```bash
-poetry run python script/3_pixel_localization.py --experiments baseline multiple_resid_ablation_with_control  --model <model_name>
+poetry run python script/3_pixel_localization.py --model llava-hf/llava-v1.6-mistral-7b-hf --saliency
 ```
 
-### Run All Main Experiments and Produce Plots
+Appendix experiments:
 
-To run the main experiments and automatically produce the corresponding plots, use the following commands:
-
-#### Identification of components and heads
 ```bash
-poetry run python script/1_logitlens.py --model <model_name>
+poetry run python script/experiment/1_heads_ablation/3_multik.py --model google/gemma-3-12b-it --use_paired --ks 1,5,10,20,30,40,50,60
+poetry run python script/experiment/3_mlp_ablation/mlp_ablation.py --model google/gemma-3-12b-it
+poetry run python script/experiment/5_segmentation/1_segmentation_attention.py --model llava-hf/llava-v1.6-mistral-7b-hf
 ```
 
-#### Intervention
+Plot checked-in artifacts:
+
 ```bash
-poetry run python script/2_intervention.py --model <model_name> --not_rebalance_weight --ablation_type last-row-paired
+poetry run python plots/example_plots.py --output-dir results/figures
 ```
 
-#### Pixel Localization
-```bash
-poetry run python script/3_pixel_localization.py --experiments baseline multiple_resid_ablation_with_control --model <model_name>
-```
+## Results
 
-#### Plotting Results
-After running the experiments, generate all main plots with:
-```bash
-poetry run python plots/example_plots.py
-```
+The checked-in `results/` tree contains the canonical result tables:
 
-Replace `<model_name>` with either `llava-hf/llava-v1.6-mistral-7b-hf` or `google/gemma-3-12b-it` as appropriate.
+- selected heads
+- paired intervention summaries
+- multi-`k` sweeps
+- MLP ablation summaries
+- localization summary CSVs

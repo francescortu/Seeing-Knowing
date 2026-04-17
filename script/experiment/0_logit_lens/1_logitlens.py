@@ -1,12 +1,13 @@
-import sys
 import os
+import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-from argparse import ArgumentParser
-
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../src"))
+)
+sys.path.append(os.path.join(os.path.dirname(__file__), "../../.."))
 import pandas as pd
 from easyroutine.interpretability import ExtractionConfig
+from argparse import ArgumentParser
 
 from src.experiment_manager import ExperimentManager, BaseConfig, DebugConfig
 from src.result_tables import save_head_selection_results
@@ -33,7 +34,7 @@ def main():
         help="Number of heads to select based on logit lens",
     )
     parser.add_argument(
-        "--dataset_subset",
+        "--dataset_subset", 
         type=str,
         default="full",
         help="Subset of the dataset to use for logit lens analysis. Options: 'full', 'small1', 'small2'. 'full' uses the entire dataset, 'small1' uses a small subset of 100 samples, and 'small2' uses another small subset of 100 samples.",
@@ -54,9 +55,7 @@ def main():
 
     # experiment.setup_model(device_map="auto").create_dataloader().filter_dataloader()
 
-    df = experiment.select_heads(
-        k_heads=args.k_heads, return_df=True, metric="logit_diff"
-    )
+    df = experiment.select_heads(k_heads=args.k_heads,return_df=True, metric="logit_diff")
 
     cache = experiment.model.extract_cache(
         [d["text_image_inputs"] for d in experiment.dataloader],
