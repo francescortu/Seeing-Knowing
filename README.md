@@ -1,8 +1,8 @@
 # Seeing-Knowing
 
-Official repository for the paper _When Seeing Overrides Knowing: Disentangling Knowledge Conflict in Vision-Language Models_.
+Official repository for the paper [_When Seeing Overrides Knowing: Disentangling Knowledge Conflict in Vision-Language Models (ACL 2026)_](https://arxiv.org/abs/2507.13868).
 
-Canonical dataset: [`francescortu/whoops-aha`](https://huggingface.co/datasets/francescortu/whoops-aha)
+Dataset: [`francescortu/whoops-aha`](https://huggingface.co/datasets/francescortu/whoops-aha)
 
 ## What Is Here
 
