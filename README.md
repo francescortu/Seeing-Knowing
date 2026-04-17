@@ -3,7 +3,8 @@
 <p align="center"><img src="fig1.png" width="70%" /></p>
 
 
-Official repository for the paper [_When Seeing Overrides Knowing: Disentangling Knowledge Conflict in Vision-Language Models (ACL 2026)_](https://arxiv.org/abs/2507.13868).
+Official repository for the paper:
+[_When Seeing Overrides Knowing: Disentangling Knowledge Conflict in Vision-Language Models (ACL 2026)_](https://arxiv.org/abs/2507.13868).
 
 Dataset: [`francescortu/whoops-aha`](https://huggingface.co/datasets/francescortu/whoops-aha)
 
@@ -72,11 +73,7 @@ Plot checked-in artifacts:
 poetry run python plots/example_plots.py --output-dir results/figures
 ```
 
-## Dataset Notes
-
-The default and canonical dataset source in the experiment code is the Hugging Face dataset `francescortu/whoops-aha`.
-
-Local exported dataset folders from paper submission preparation are treated as derived artifacts, not as the source of truth. In particular, older local ARR exports may contain recompressed image files and should not be used as the canonical reference for reproducing the main results.
+## Results
 
 The checked-in `results/` tree contains the canonical result tables:
 
@@ -85,5 +82,3 @@ The checked-in `results/` tree contains the canonical result tables:
 - multi-`k` sweeps
 - MLP ablation summaries
 - localization summary CSVs
-
-The public workflow does not keep timestamped experiment dump folders in git. The experiment scripts write the canonical result tables directly into `results/`.
